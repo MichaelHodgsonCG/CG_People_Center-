@@ -165,18 +165,77 @@ $$;
 
 -- ---------------------------------------------------------------------------
 -- 3. The People Center-owned trigger on auth.users
+--
+-- Hosted Supabase: auth.users is owned by supabase_auth_admin, and the
+-- postgres role holds only the TRIGGER grant on it. ALTER TRIGGER ... RENAME
+-- requires table OWNERSHIP, so it fails there with 42501 ("must be owner of
+-- table users") even though CREATE TRIGGER works. Strategy, most- to
+-- least-privileged, all idempotent:
+--   a) rename in place (works locally / as a table owner);
+--   b) create the prefixed trigger, then drop the old one (needs only the
+--      TRIGGER grant for the create; the drop may still be refused);
+--   c) if nothing is permitted, WARN and keep the old name — this is
+--      cosmetic only: the trigger binds its function by OID, so it already
+--      calls people_center_handle_new_user() and signups keep working.
+-- If both triggers briefly coexist (b succeeds, drop refused), double-firing
+-- is harmless: the profile insert is ON CONFLICT DO NOTHING.
 -- ---------------------------------------------------------------------------
 
 do $$
+declare
+  old_exists boolean;
+  new_exists boolean;
 begin
-  if exists (
+  select exists (
     select 1 from pg_trigger
-    where tgrelid = 'auth.users'::regclass
-      and tgname = 'on_auth_user_created'
-  ) then
-    alter trigger on_auth_user_created on auth.users
-      rename to people_center_on_auth_user_created;
+    where tgrelid = 'auth.users'::regclass and tgname = 'on_auth_user_created'
+  ) into old_exists;
+  select exists (
+    select 1 from pg_trigger
+    where tgrelid = 'auth.users'::regclass and tgname = 'people_center_on_auth_user_created'
+  ) into new_exists;
+
+  if not old_exists then
+    return; -- already renamed (or fresh DB re-run) — nothing to do
   end if;
+
+  if not new_exists then
+    -- a) rename in place
+    begin
+      alter trigger on_auth_user_created on auth.users
+        rename to people_center_on_auth_user_created;
+      return;
+    exception when insufficient_privilege then
+      null; -- hosted Supabase: fall through to create-then-drop
+    end;
+
+    -- b) create the prefixed trigger first, so a refused drop below can
+    --    never leave us without a signup trigger
+    begin
+      create trigger people_center_on_auth_user_created
+        after insert on auth.users
+        for each row execute function public.people_center_handle_new_user();
+      new_exists := true;
+    exception when insufficient_privilege then
+      raise warning using message =
+        'Cannot modify triggers on auth.users (postgres is not the owner and '
+        'lacks the TRIGGER grant). The existing on_auth_user_created trigger '
+        'keeps working — it already calls people_center_handle_new_user(). '
+        'Rename it with an elevated role before the CGOPS merge.';
+      return;
+    end;
+  end if;
+
+  -- both triggers exist (from step b, or a previous partial run): drop the old
+  begin
+    drop trigger on_auth_user_created on auth.users;
+  exception when insufficient_privilege then
+    raise warning using message =
+      'Created people_center_on_auth_user_created but could not drop the old '
+      'on_auth_user_created trigger (postgres does not own auth.users). Both '
+      'firing is harmless (the profile insert is ON CONFLICT DO NOTHING); '
+      'drop the old trigger with an elevated role before the CGOPS merge.';
+  end;
 end;
 $$;
 
