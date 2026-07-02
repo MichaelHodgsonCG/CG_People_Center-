@@ -111,8 +111,11 @@ export function DataSourcesView({ profile }: { profile: UserProfile | null }) {
             <CheckCircle2 className="h-5 w-5 text-green-700" /> Sync committed
           </div>
           <SummaryLine label="Imported" value={stage.summary.imported} />
+          <SummaryLine
+            label="Imported flagged for review"
+            value={stage.summary.importedForReview}
+          />
           <SummaryLine label="Already present (unchanged)" value={stage.summary.duplicates} />
-          <SummaryLine label="Needs review" value={stage.summary.needsReview} />
           <SummaryLine label="Out of scope (recorded)" value={stage.summary.skipped} />
           <p className="mt-3 text-xs text-charcoal/50">Batch {stage.batchId}</p>
           <button
@@ -152,7 +155,7 @@ function PreviewPanel({
   onCancel: () => void
 }) {
   const summary = summarize(classified)
-  const review = classified.filter((c) => c.disposition === 'needs_review')
+  const review = classified.filter((c) => c.disposition === 'imported_for_review')
 
   return (
     <div className="rounded-xl border border-surface-line bg-white p-6">
@@ -162,13 +165,17 @@ function PreviewPanel({
       </div>
       <SummaryLine label="Source rows with a person" value={summary.rowCount} />
       <SummaryLine label="Will import" value={summary.imported} strong />
-      <SummaryLine label="Needs review (recorded, not imported)" value={summary.needsReview} />
+      <SummaryLine
+        label="Will import flagged for review"
+        value={summary.importedForReview}
+        strong
+      />
       <SummaryLine label="Out of scope (recorded, not imported)" value={summary.skipped} />
 
       {review.length > 0 && (
         <div className="mt-4 rounded-md border border-amber-300 bg-amber-50 p-3">
           <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-amber-800">
-            <AlertTriangle className="h-4 w-4" /> Review queue ({review.length})
+            <AlertTriangle className="h-4 w-4" /> Importing flagged for review ({review.length})
           </p>
           <ul className="max-h-48 space-y-1 overflow-y-auto text-xs text-charcoal/70">
             {review.map((c) => (
@@ -186,7 +193,7 @@ function PreviewPanel({
           onClick={onCommit}
           className="rounded-md bg-cg-orange px-4 py-2 text-sm font-medium text-white hover:bg-cg-orange-hover"
         >
-          Commit {summary.imported} people
+          Commit {summary.imported + summary.importedForReview} people
         </button>
         <button
           onClick={onCancel}

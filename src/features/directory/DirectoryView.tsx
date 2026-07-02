@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Search, Users } from 'lucide-react'
+import { AlertTriangle, Search, Users } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 interface DirectoryPerson {
@@ -8,6 +8,8 @@ interface DirectoryPerson {
   preferred_name: string | null
   status: 'active' | 'leave' | 'departed'
   person_kind: 'manager' | 'emerging_leader' | 'key_team_member'
+  data_quality_status: 'ok' | 'needs_review'
+  data_quality_note: string | null
   position_assignments: {
     is_primary: boolean
     ended_on: string | null
@@ -44,6 +46,7 @@ export function DirectoryView({ isAdmin }: { isAdmin?: boolean }) {
       .from('people')
       .select(
         `id, full_name, preferred_name, status, person_kind,
+         data_quality_status, data_quality_note,
          position_assignments ( is_primary, ended_on,
            positions ( name ), locations ( name ) )`,
       )
@@ -79,6 +82,11 @@ export function DirectoryView({ isAdmin }: { isAdmin?: boolean }) {
       return true
     })
   }, [people, query, locationFilter, kindFilter])
+
+  const needsReviewCount = useMemo(
+    () => people.filter((p) => p.data_quality_status === 'needs_review').length,
+    [people],
+  )
 
   if (loading) {
     return <p className="p-6 text-sm text-charcoal/50">Loading directory…</p>
@@ -128,6 +136,11 @@ export function DirectoryView({ isAdmin }: { isAdmin?: boolean }) {
 
       <p className="mb-3 text-xs uppercase tracking-wide text-charcoal/50">
         {filtered.length} of {people.length} people
+        {needsReviewCount > 0 && (
+          <span className="ml-2 text-warning">
+            · {needsReviewCount} need{needsReviewCount === 1 ? 's' : ''} review
+          </span>
+        )}
       </p>
 
       {people.length === 0 ? (
@@ -163,7 +176,19 @@ export function DirectoryView({ isAdmin }: { isAdmin?: boolean }) {
                 const primary = currentPrimary(p)
                 return (
                   <tr key={p.id} className="border-b border-surface-line/60 last:border-0">
-                    <td className="px-4 py-2.5 font-medium">{p.full_name}</td>
+                    <td className="px-4 py-2.5 font-medium">
+                      <span className="flex items-center gap-2">
+                        {p.full_name}
+                        {p.data_quality_status === 'needs_review' && (
+                          <span
+                            title={p.data_quality_note ?? 'Imported with review flags'}
+                            className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning"
+                          >
+                            <AlertTriangle className="h-3 w-3" /> Needs review
+                          </span>
+                        )}
+                      </span>
+                    </td>
                     <td className="px-4 py-2.5">{primary?.positions?.name ?? '—'}</td>
                     <td className="px-4 py-2.5">{primary?.locations?.name ?? '—'}</td>
                     <td className="px-4 py-2.5">

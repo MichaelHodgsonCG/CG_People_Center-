@@ -29,18 +29,29 @@ export interface NormalizedRow {
 
 export type Disposition =
   | 'imported'
+  | 'imported_for_review' // leadership-signaled anomaly: imported, flagged for cleanup
   | 'skipped_out_of_scope'
-  | 'needs_review'
+  | 'needs_review' // kept for future sources; current rules import-or-skip
   | 'duplicate'
 
 export interface ClassifiedRow {
   row: NormalizedRow
   disposition: Disposition
   reviewNote: string | null
-  /** Resolved local ids when the row maps cleanly to an eligible position. */
+  /**
+   * Resolved local ids. For 'imported_for_review', positionId may be the
+   * 'Needs Position Review' placeholder, and locationId may be null (then
+   * no assignment is created — the person still imports, flagged).
+   */
   positionId: string | null
   locationId: string | null
   personKind: 'manager' | 'emerging_leader' | 'key_team_member' | null
+  /**
+   * True when this row's person was already produced by an earlier row of
+   * the same batch (multi-location): the upsert attaches a non-primary
+   * assignment to that person instead of creating a second one.
+   */
+  sameBatchDuplicate: boolean
 }
 
 export interface PositionMappingEntry {
@@ -59,12 +70,18 @@ export interface LocationMappingEntry {
 export interface MappingTables {
   positions: Map<string, PositionMappingEntry>
   locations: Map<string, LocationMappingEntry>
+  /** positions.id of the 'Needs Position Review' placeholder. */
+  placeholderPositionId: string | null
 }
 
 export interface BatchSummary {
   rowCount: number
   imported: number
+  importedForReview: number
   duplicates: number
   needsReview: number
   skipped: number
 }
+
+/** Name of the seeded placeholder position for unclear source positions. */
+export const PLACEHOLDER_POSITION_NAME = 'Needs Position Review'

@@ -5,6 +5,14 @@
 // which is decided by POSITION ELIGIBILITY (positions.people_center_eligible
 // via position_mappings) — never by salary status, which this pipeline does
 // not even read.
+//
+// Review philosophy (ADR 0005 amendment, 2026-07-02): rows with leadership
+// signals but broken/ambiguous data are IMPORTED AND FLAGGED
+// ('imported_for_review', people.data_quality_status = 'needs_review',
+// review reason preserved) rather than excluded — a questionable manager
+// inside People Center marked for cleanup beats a missing one. Rows that map
+// cleanly to non-eligible positions (e.g. Supervisor) and unmapped ordinary
+// hourly rows still never import.
 
 import { normalizeKey } from './normalize'
 import type { ClassifiedRow, MappingTables, NormalizedRow } from './types'
@@ -15,80 +23,109 @@ export function classify(
   rows: NormalizedRow[],
   mappings: MappingTables,
 ): ClassifiedRow[] {
-  const seenKeys = new Map<string, number>() // sourceKey → first eligible rowNumber
-  const results: ClassifiedRow[] = []
+  // sourceKey → rowNumber of the row that (will) create the person
+  const importedKeys = new Map<string, number>()
+  return rows.map((row) => classifyOne(row, mappings, importedKeys))
+}
 
-  for (const row of rows) {
-    results.push(classifyOne(row, mappings, seenKeys))
-  }
-  return results
+function hasManagementSignal(row: NormalizedRow): boolean {
+  return (
+    normalizeKey(row.primaryDepartment ?? '') === MANAGEMENT_DEPT_KEY ||
+    row.otherPositions.some((p) => normalizeKey(p) === MANAGEMENT_DEPT_KEY)
+  )
 }
 
 function classifyOne(
   row: NormalizedRow,
   mappings: MappingTables,
-  seenKeys: Map<string, number>,
+  importedKeys: Map<string, number>,
 ): ClassifiedRow {
+  const location = row.companyName
+    ? (mappings.locations.get(normalizeKey(row.companyName)) ?? null)
+    : null
+
   const base = {
     row,
-    positionId: null,
-    locationId: null,
+    positionId: null as string | null,
+    locationId: null as string | null,
     personKind: null,
+    sameBatchDuplicate: false,
   }
 
-  if (!row.primaryPosition) {
+  // Import-with-flag for anomalous rows; handles the multi-location case by
+  // marking the second appearance so the upsert attaches to the same person.
+  function flaggedImport(note: string, positionId: string | null): ClassifiedRow {
+    const firstRow = importedKeys.get(row.sourceKey)
+    if (firstRow === undefined) importedKeys.set(row.sourceKey, row.rowNumber)
     return {
       ...base,
-      disposition: 'needs_review',
-      reviewNote: 'No primary position in source row',
+      disposition: 'imported_for_review',
+      reviewNote:
+        firstRow === undefined
+          ? note
+          : `${note}; also appears in row ${firstRow} — multi-location, confirm primary`,
+      positionId,
+      locationId: location?.locationId ?? null,
+      personKind: 'manager', // provisional; admin corrects during cleanup
+      sameBatchDuplicate: firstRow !== undefined,
     }
+  }
+
+  // Anomaly: no position at all. Import flagged with the placeholder.
+  if (!row.primaryPosition) {
+    return flaggedImport(
+      'No primary position in source row',
+      mappings.placeholderPositionId,
+    )
   }
 
   const position = mappings.positions.get(normalizeKey(row.primaryPosition))
 
   if (!position) {
-    // Unmapped position: out of scope, unless the source flags the person as
-    // management (by department OR anywhere in the positions list) — then a
-    // human should look ("Manager", "Salaried Manager", data errors) rather
-    // than the row vanishing silently.
-    const flaggedManagement =
-      normalizeKey(row.primaryDepartment ?? '') === MANAGEMENT_DEPT_KEY ||
-      row.otherPositions.some((p) => normalizeKey(p) === MANAGEMENT_DEPT_KEY)
-    return flaggedManagement
-      ? {
-          ...base,
-          disposition: 'needs_review',
-          reviewNote: `Management-flagged row with unmapped position "${row.primaryPosition}"`,
-        }
-      : { ...base, disposition: 'skipped_out_of_scope', reviewNote: null }
+    // Unmapped position with a management signal (department or positions
+    // list): import flagged with the placeholder position. Without a
+    // management signal: ordinary out-of-scope row.
+    if (hasManagementSignal(row)) {
+      return flaggedImport(
+        `Unmapped position "${row.primaryPosition}" on a management-flagged row`,
+        mappings.placeholderPositionId,
+      )
+    }
+    return { ...base, disposition: 'skipped_out_of_scope', reviewNote: null }
   }
 
   if (!position.eligible) {
     // Mapped, explicitly not eligible (e.g. Supervisor): a clean, recorded
-    // skip — these are nomination candidates, not imports (D4).
+    // skip — these are nomination candidates, not imports (D4). This rule is
+    // unchanged by the review-import amendment: it is what keeps broad
+    // hourly leadership-adjacent rows out.
     return { ...base, disposition: 'skipped_out_of_scope', reviewNote: null }
   }
 
-  const location = row.companyName
-    ? mappings.locations.get(normalizeKey(row.companyName))
-    : undefined
+  // Eligible position at an unmapped business unit: import flagged with the
+  // real position but no assignment (location gets fixed during cleanup).
   if (!location) {
-    return {
-      ...base,
-      disposition: 'needs_review',
-      reviewNote: `Eligible person at unmapped business unit "${row.companyName ?? '(none)'}"`,
-    }
+    return flaggedImport(
+      `Business unit "${row.companyName ?? '(none)'}" is not mapped`,
+      position.positionId,
+    )
   }
 
-  const firstRow = seenKeys.get(row.sourceKey)
+  // Clean eligible row. A second appearance of the same person is
+  // multi-location: import flagged so an admin confirms the primary.
+  const firstRow = importedKeys.get(row.sourceKey)
   if (firstRow !== undefined) {
     return {
       ...base,
-      disposition: 'needs_review',
-      reviewNote: `Same person also in row ${firstRow} — multi-location; confirm primary assignment`,
+      disposition: 'imported_for_review',
+      reviewNote: `Also appears in row ${firstRow} — multi-location, confirm primary`,
+      positionId: position.positionId,
+      locationId: location.locationId,
+      personKind: position.defaultPersonKind,
+      sameBatchDuplicate: true,
     }
   }
-  seenKeys.set(row.sourceKey, row.rowNumber)
+  importedKeys.set(row.sourceKey, row.rowNumber)
 
   return {
     row,
@@ -97,6 +134,7 @@ function classifyOne(
     positionId: position.positionId,
     locationId: location.locationId,
     personKind: position.defaultPersonKind,
+    sameBatchDuplicate: false,
   }
 }
 
@@ -104,6 +142,8 @@ export function summarize(classified: ClassifiedRow[]) {
   return {
     rowCount: classified.length,
     imported: classified.filter((c) => c.disposition === 'imported').length,
+    importedForReview: classified.filter((c) => c.disposition === 'imported_for_review')
+      .length,
     duplicates: classified.filter((c) => c.disposition === 'duplicate').length,
     needsReview: classified.filter((c) => c.disposition === 'needs_review').length,
     skipped: classified.filter((c) => c.disposition === 'skipped_out_of_scope').length,

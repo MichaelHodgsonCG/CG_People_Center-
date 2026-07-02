@@ -3,13 +3,18 @@
 // Supabase client is injected so the pipeline core stays pure.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { LocationMappingEntry, MappingTables, PositionMappingEntry } from './types'
+import {
+  PLACEHOLDER_POSITION_NAME,
+  type LocationMappingEntry,
+  type MappingTables,
+  type PositionMappingEntry,
+} from './types'
 
 export async function loadMappings(
   supabase: SupabaseClient,
   sourceSystem: string,
 ): Promise<MappingTables> {
-  const [positionsRes, locationsRes] = await Promise.all([
+  const [positionsRes, locationsRes, placeholderRes] = await Promise.all([
     supabase
       .from('position_mappings')
       .select(
@@ -20,9 +25,15 @@ export async function loadMappings(
       .from('location_mappings')
       .select('source_value, locations ( id, name )')
       .eq('source_system', sourceSystem),
+    supabase
+      .from('positions')
+      .select('id')
+      .eq('name', PLACEHOLDER_POSITION_NAME)
+      .maybeSingle(),
   ])
   if (positionsRes.error) throw positionsRes.error
   if (locationsRes.error) throw locationsRes.error
+  if (placeholderRes.error) throw placeholderRes.error
 
   const positions = new Map<string, PositionMappingEntry>()
   for (const row of positionsRes.data ?? []) {
@@ -51,5 +62,9 @@ export async function loadMappings(
     })
   }
 
-  return { positions, locations }
+  return {
+    positions,
+    locations,
+    placeholderPositionId: (placeholderRes.data?.id as string | undefined) ?? null,
+  }
 }

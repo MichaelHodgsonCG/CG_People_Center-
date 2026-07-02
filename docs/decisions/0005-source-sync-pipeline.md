@@ -40,6 +40,31 @@ Stages 1–5 are pure modules (no Supabase client, no env access); the two
 database-touching stages take the client as a parameter. This is what makes
 the pipeline testable offline and transport-swappable.
 
+## Amendment — review rows import flagged (2026-07-02, approved)
+
+Original stage-5 behavior excluded anomalous rows (`needs_review` in lineage
+only). Approved change: **rows with leadership signals import with a visible
+data-quality flag instead of being excluded** — for the initial roster load,
+a questionable manager inside People Center marked for cleanup beats a
+missing one.
+
+- New disposition `imported_for_review`; the person is created with
+  `people.data_quality_status = 'needs_review'` and the review reason
+  preserved in `people.data_quality_note` (and in `import_rows.review_note`).
+- Unclear positions get the seeded **`Needs Position Review`** placeholder
+  position (never eligible, never source-mapped); an unmappable location
+  means the person imports with no assignment.
+- Multi-location appearances attach a non-primary assignment to the same
+  person (duplicate-guarded) and flag them, instead of creating a second
+  person or being dropped.
+- Flagged people are visible in the Directory with a "Needs review" marker;
+  admins assign the real position/location/person_kind — or remove the
+  person — during cleanup.
+- **Unchanged:** mapped-but-ineligible positions (Supervisor) and unmapped
+  ordinary hourly rows still never import. The amendment applies only to
+  rows with management/leadership signals or broken position data — not to
+  the broad hourly population.
+
 ## Consequences
 
 - A Push API integration is a new transport file plus a `source_system`
