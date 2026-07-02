@@ -34,6 +34,17 @@ not by compensation change.
 4. Growing the population = flipping flags / adding positions and mappings.
    No importer or schema changes.
 
+## Amendment — Supervisors are eligible as Emerging Leaders (2026-07-02, approved)
+
+The initial decision left Supervisor mapped but not eligible
+(nomination-only). Approved change: **the Supervisor position is eligible**,
+with `default_person_kind = 'emerging_leader'` — HQ approved the position
+wholesale instead of per-person nomination
+(migration `20260702110000_make_supervisor_eligible.sql`). Implemented as a
+configuration flip with zero pipeline changes, exactly as this ADR intended.
+D4's remaining scope is now only about individually flagging emerging
+leaders who hold non-eligible positions.
+
 ## Consequences
 
 - "GM in Training" is a real position in the vocabulary (supersedes the
