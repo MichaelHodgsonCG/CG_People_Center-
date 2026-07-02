@@ -2,8 +2,9 @@
 // can(); no ad-hoc role checks in components (ARCHITECTURE_REVIEW.md §8.5,
 // CGOPS_FOUNDATIONS.md §3). RLS remains the enforcement layer; this module
 // exists so the UI and the database agree on one vocabulary, and so that
-// when CGOPS becomes the permission authority, user_profiles/user_scopes
-// become a synced projection of CGOPS grants and this signature is unchanged.
+// when CGOPS becomes the permission authority, people_center_user_profiles/
+// people_center_user_scopes become a synced projection of CGOPS grants and
+// this signature is unchanged.
 //
 // Phase 0 truth table is deliberately tiny: admins can do everything; any
 // authenticated user may view the shell. The five-role vocabulary is defined

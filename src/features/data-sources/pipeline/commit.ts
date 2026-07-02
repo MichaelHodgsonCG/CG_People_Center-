@@ -12,7 +12,7 @@
 //   * Clean 'imported' rows whose person exists from a prior batch become
 //     'duplicate' (linked, unchanged) — a re-sync never overwrites
 //     leadership-entered data.
-//   * Every source row lands in import_rows either way.
+//   * Every source row lands in people_center_import_rows either way.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { BatchSummary, ClassifiedRow } from './types'
@@ -38,7 +38,7 @@ export async function commitBatch(
 ): Promise<CommitResult> {
   // Correlate against people created by prior batches of this source.
   const { data: priorBatches, error: pbErr } = await supabase
-    .from('import_batches')
+    .from('people_center_import_batches')
     .select('id')
     .eq('source', input.source)
   if (pbErr) throw pbErr
@@ -46,7 +46,7 @@ export async function commitBatch(
   const existingByKey = new Map<string, string>()
   if (priorBatches && priorBatches.length > 0) {
     const { data: priorRows, error: prErr } = await supabase
-      .from('import_rows')
+      .from('people_center_import_rows')
       .select('source_key, person_id')
       .in('batch_id', priorBatches.map((b) => b.id))
       .not('person_id', 'is', null)
@@ -74,7 +74,7 @@ export async function commitBatch(
   })
 
   const { data: batch, error: batchErr } = await supabase
-    .from('import_batches')
+    .from('people_center_import_batches')
     .insert({
       source: input.source,
       transport: input.transport,
@@ -98,7 +98,7 @@ export async function commitBatch(
   const personIdByRowNumber = new Map<number, string>()
   if (toCreate.length > 0) {
     const { data: people, error: peopleErr } = await supabase
-      .from('people')
+      .from('people_center_people')
       .insert(
         toCreate.map((c) => ({
           full_name: c.row.displayName,
@@ -132,7 +132,7 @@ export async function commitBatch(
       }))
     if (assignments.length > 0) {
       const { error: paErr } = await supabase
-        .from('position_assignments')
+        .from('people_center_position_assignments')
         .insert(assignments)
       if (paErr) throw paErr
     }
@@ -151,7 +151,7 @@ export async function commitBatch(
 
     if (c.positionId && c.locationId) {
       const { data: existing, error: exErr } = await supabase
-        .from('position_assignments')
+        .from('people_center_position_assignments')
         .select('id')
         .eq('person_id', personId)
         .eq('position_id', c.positionId)
@@ -160,7 +160,7 @@ export async function commitBatch(
         .limit(1)
       if (exErr) throw exErr
       if (!existing || existing.length === 0) {
-        const { error: paErr } = await supabase.from('position_assignments').insert({
+        const { error: paErr } = await supabase.from('people_center_position_assignments').insert({
           person_id: personId,
           position_id: c.positionId,
           location_id: c.locationId,
@@ -173,7 +173,7 @@ export async function commitBatch(
     }
 
     const { data: person, error: pErr } = await supabase
-      .from('people')
+      .from('people_center_people')
       .select('data_quality_note')
       .eq('id', personId)
       .single()
@@ -184,7 +184,7 @@ export async function commitBatch(
         ? existingNote
         : [existingNote, c.reviewNote].filter(Boolean).join('; ') || null
     const { error: updErr } = await supabase
-      .from('people')
+      .from('people_center_people')
       .update({
         data_quality_status: 'needs_review',
         data_quality_note: note,
@@ -194,7 +194,7 @@ export async function commitBatch(
     if (updErr) throw updErr
   }
 
-  const { error: rowsErr } = await supabase.from('import_rows').insert(
+  const { error: rowsErr } = await supabase.from('people_center_import_rows').insert(
     rows.map((c) => ({
       batch_id: batchId,
       row_number: c.row.rowNumber,
@@ -221,7 +221,7 @@ export async function commitBatch(
   }
 
   const { error: countErr } = await supabase
-    .from('import_batches')
+    .from('people_center_import_batches')
     .update({
       row_count: summary.rowCount,
       imported_count: summary.imported,

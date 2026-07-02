@@ -2,9 +2,9 @@
 //
 // The question this stage answers is the architectural rule (ADR 0004):
 //   "Should this person exist in People Center?"
-// which is decided by POSITION ELIGIBILITY (positions.people_center_eligible
-// via position_mappings) — never by salary status, which this pipeline does
-// not even read.
+// which is decided by POSITION ELIGIBILITY (people_center_positions.
+// people_center_eligible via people_center_position_mappings) — never by
+// salary status, which this pipeline does not even read.
 //
 // Review philosophy (ADR 0005 amendment, 2026-07-02): rows with leadership
 // signals but broken/ambiguous data are IMPORTED AND FLAGGED
