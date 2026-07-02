@@ -6,16 +6,18 @@ import { DirectoryView } from './features/directory/DirectoryView'
 import { can, toPermissionUser } from './permissions'
 
 // Lazy: the sync pipeline (and its xlsx parser) only loads for admins who
-// open the Imports tab.
-const ImportView = lazy(() =>
-  import('./features/imports/ImportView').then((m) => ({ default: m.ImportView })),
+// open Data Sources.
+const DataSourcesView = lazy(() =>
+  import('./features/data-sources/DataSourcesView').then((m) => ({
+    default: m.DataSourcesView,
+  })),
 )
 
 // Top-level view state lives here (house convention — no router library;
 // revisit at Phase 2 per ARCHITECTURE_REVIEW.md §2.3 when the cheat sheet
 // wants shareable deep links).
 export default function App() {
-  const { session, profile, loading } = useSession()
+  const { session, profile, profileError, loading } = useSession()
   const [view, setView] = useState<View>('directory')
 
   if (loading) {
@@ -30,16 +32,24 @@ export default function App() {
 
   const user = profile ? toPermissionUser(profile) : null
   const effectiveView: View =
-    view === 'imports' && !can(user, 'view', 'imports') ? 'directory' : view
+    view === 'data_sources' && !can(user, 'view', 'data_sources')
+      ? 'directory'
+      : view
 
   return (
-    <AppShell session={session} profile={profile} view={effectiveView} onNavigate={setView}>
-      {effectiveView === 'imports' ? (
+    <AppShell
+      session={session}
+      profile={profile}
+      profileError={profileError}
+      view={effectiveView}
+      onNavigate={setView}
+    >
+      {effectiveView === 'data_sources' ? (
         <Suspense fallback={<p className="p-6 text-sm text-charcoal/50">Loading…</p>}>
-          <ImportView profile={profile} />
+          <DataSourcesView profile={profile} />
         </Suspense>
       ) : (
-        <DirectoryView />
+        <DirectoryView isAdmin={user?.role === 'admin'} />
       )}
     </AppShell>
   )

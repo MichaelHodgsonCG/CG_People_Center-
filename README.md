@@ -61,16 +61,43 @@ explicitly on every table; no `anon` policies exist anywhere.
 
 ### Bootstrap the first admin
 
-Sign up the first user (Supabase dashboard → Authentication → Add user, or
-the app login once a user exists), then promote by email in the SQL editor:
+Create the first user (Supabase dashboard → Authentication → Add user), then
+promote by email in the SQL editor. This upsert works whether or not the
+profile row already exists (a plain UPDATE silently matches 0 rows if the
+auth user predates the migrations):
 
 ```sql
-update public.user_profiles
-set role = 'admin', updated_by_name = 'bootstrap'
-where email = 'you@charcoalgroup.ca';
+insert into public.user_profiles (auth_user_id, email, role, updated_by_name)
+select id, email, 'admin', 'bootstrap'
+from auth.users
+where email = 'you@charcoalgroup.ca'
+on conflict (auth_user_id) do update
+  set role = 'admin', updated_by_name = 'bootstrap';
 ```
 
 Every later role grant is done by an admin.
+
+### Troubleshooting: signed in but no admin navigation
+
+The app resolves the role from `user_profiles.role` for the signed-in
+`auth_user_id` on every load — nothing is cached. The user menu (top right)
+shows exactly what was resolved: the role badge, or a "not resolved" warning
+with the reason and your auth uid. To inspect the database side:
+
+```sql
+select u.id as auth_user_id, u.email, p.id as profile_id, p.role
+from auth.users u
+left join public.user_profiles p on p.auth_user_id = u.id;
+```
+
+- **`profile_id` is null** → the auth user predates the Phase 0 migrations,
+  so the signup trigger never fired. Apply migration
+  `20260702090000_backfill_user_profiles.sql` (creates missing rows), then
+  run the bootstrap upsert above.
+- **`role` is `viewer`** → the promotion ran before the profile row existed
+  and matched 0 rows. Run the bootstrap upsert above.
+
+Refresh the app after either fix.
 
 ## Phase map
 

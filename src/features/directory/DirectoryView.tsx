@@ -30,7 +30,7 @@ function currentPrimary(person: DirectoryPerson) {
   )
 }
 
-export function DirectoryView() {
+export function DirectoryView({ isAdmin }: { isAdmin?: boolean }) {
   const [people, setPeople] = useState<DirectoryPerson[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -84,7 +84,7 @@ export function DirectoryView() {
     return <p className="p-6 text-sm text-charcoal/50">Loading directory…</p>
   }
   if (error) {
-    return <p className="p-6 text-sm text-ember">Could not load directory: {error}</p>
+    return <p className="p-6 text-sm text-danger">Could not load directory: {error}</p>
   }
 
   return (
@@ -97,13 +97,13 @@ export function DirectoryView() {
             placeholder="Search by name…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="w-full rounded-md border border-charcoal/20 bg-white py-2 pl-9 pr-3 text-sm focus:border-charcoal focus:outline-none"
+            className="w-full rounded-md border border-surface-line bg-surface py-2 pl-9 pr-3 text-sm focus:border-charcoal focus:outline-none"
           />
         </div>
         <select
           value={locationFilter}
           onChange={(e) => setLocationFilter(e.target.value)}
-          className="rounded-md border border-charcoal/20 bg-white px-3 py-2 text-sm"
+          className="rounded-md border border-surface-line bg-surface px-3 py-2 text-sm"
         >
           <option value="">All locations</option>
           {locations.map((l) => (
@@ -115,7 +115,7 @@ export function DirectoryView() {
         <select
           value={kindFilter}
           onChange={(e) => setKindFilter(e.target.value)}
-          className="rounded-md border border-charcoal/20 bg-white px-3 py-2 text-sm"
+          className="rounded-md border border-surface-line bg-surface px-3 py-2 text-sm"
         >
           <option value="">All kinds</option>
           {Object.entries(KIND_LABELS).map(([k, label]) => (
@@ -131,17 +131,26 @@ export function DirectoryView() {
       </p>
 
       {people.length === 0 ? (
-        <div className="rounded-xl border border-charcoal/10 bg-white p-10 text-center">
+        <div className="rounded-xl border border-surface-line bg-surface p-10 text-center">
           <Users className="mx-auto mb-3 h-8 w-8 text-charcoal/30" />
-          <p className="text-sm text-charcoal/60">
-            No people yet — run the Push roster sync from the Imports tab.
+          <h3 className="mb-1 text-sm font-medium">No people yet</h3>
+          <p className="mx-auto mb-4 max-w-sm text-sm text-charcoal/60">
+            The directory fills from a leadership population sync.
+            {isAdmin
+              ? ' Run the Push roster sync to bring in the current leadership population.'
+              : ' An administrator runs the sync from Data Sources.'}
           </p>
+          {isAdmin && (
+            <p className="text-sm font-medium text-cg-orange">
+              Data Sources → Push roster → choose file
+            </p>
+          )}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-charcoal/10 bg-white">
+        <div className="overflow-x-auto rounded-xl border border-surface-line bg-surface">
           <table className="w-full text-left text-sm">
             <thead>
-              <tr className="border-b border-charcoal/10 text-xs uppercase tracking-wide text-charcoal/50">
+              <tr className="border-b border-surface-line text-xs uppercase tracking-wide text-charcoal/50">
                 <th className="px-4 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">Position</th>
                 <th className="px-4 py-3 font-medium">Location</th>
@@ -153,12 +162,12 @@ export function DirectoryView() {
               {filtered.map((p) => {
                 const primary = currentPrimary(p)
                 return (
-                  <tr key={p.id} className="border-b border-charcoal/5 last:border-0">
+                  <tr key={p.id} className="border-b border-surface-line/60 last:border-0">
                     <td className="px-4 py-2.5 font-medium">{p.full_name}</td>
                     <td className="px-4 py-2.5">{primary?.positions?.name ?? '—'}</td>
                     <td className="px-4 py-2.5">{primary?.locations?.name ?? '—'}</td>
                     <td className="px-4 py-2.5">
-                      <span className="rounded-full bg-charcoal/5 px-2 py-0.5 text-xs">
+                      <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs">
                         {KIND_LABELS[p.person_kind]}
                       </span>
                     </td>

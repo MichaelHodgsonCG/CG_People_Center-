@@ -14,7 +14,7 @@ import type { AppRole, UserProfile } from '../types'
 
 export type Action = 'view' | 'create' | 'update' | 'delete' | 'administer'
 
-export type Resource = 'shell' | 'admin_area' | 'directory' | 'imports'
+export type Resource = 'shell' | 'admin_area' | 'directory' | 'data_sources'
 
 export interface PermissionUser {
   role: AppRole
@@ -33,7 +33,7 @@ export function can(
   if (!user) return false
   if (user.role === 'admin') return true
   // Phase 1: any authenticated leader may view the shell and the directory;
-  // imports (lineage contains legal names) and all writes are admin-only
-  // until Phase 2 makes the other roles real.
+  // Data Sources (lineage contains legal names) and all writes are
+  // admin-only until Phase 2 makes the other roles real.
   return action === 'view' && (resource === 'shell' || resource === 'directory')
 }

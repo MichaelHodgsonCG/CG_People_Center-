@@ -1,83 +1,206 @@
-import type { ReactNode } from 'react'
+// App shell per docs/platform/PLATFORM_DESIGN_SYSTEM.md: minimal header
+// (logo, app name, brand indicator, user menu — no primary navigation),
+// collapsed-by-default left navigation rail (icons always visible,
+// expandable, preference remembered), light business-app theme.
+
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { LogOut } from 'lucide-react'
+import {
+  ChevronsLeft,
+  ChevronsRight,
+  Database,
+  LogOut,
+  ShieldAlert,
+  Users,
+  type LucideIcon,
+} from 'lucide-react'
 import { signOut } from '../features/auth/useSession'
 import { can, toPermissionUser, type Resource } from '../permissions'
 import type { UserProfile } from '../types'
 import monogram from '../assets/cg-monogram.svg'
-import wordmark from '../assets/cg-wordmark.svg'
 
-export type View = 'directory' | 'imports'
+export type View = 'directory' | 'data_sources'
 
-const NAV: { view: View; label: string; resource: Resource }[] = [
-  { view: 'directory', label: 'Directory', resource: 'directory' },
-  { view: 'imports', label: 'Imports', resource: 'imports' },
+const NAV: { view: View; label: string; resource: Resource; icon: LucideIcon }[] = [
+  { view: 'directory', label: 'Directory', resource: 'directory', icon: Users },
+  { view: 'data_sources', label: 'Data Sources', resource: 'data_sources', icon: Database },
 ]
+
+const NAV_PREF_KEY = 'pc.nav.expanded'
 
 interface AppShellProps {
   session: Session
   profile: UserProfile | null
+  profileError: string | null
   view: View
   onNavigate: (view: View) => void
   children: ReactNode
 }
 
-export function AppShell({ session, profile, view, onNavigate, children }: AppShellProps) {
+export function AppShell({
+  session,
+  profile,
+  profileError,
+  view,
+  onNavigate,
+  children,
+}: AppShellProps) {
   const user = profile ? toPermissionUser(profile) : null
-  const displayName =
-    profile?.display_name ?? profile?.email ?? session.user.email ?? 'Signed in'
   const visibleNav = NAV.filter((n) => can(user, 'view', n.resource))
+  const [expanded, setExpanded] = useState(
+    () => localStorage.getItem(NAV_PREF_KEY) === '1',
+  )
+
+  function toggleNav() {
+    setExpanded((prev) => {
+      localStorage.setItem(NAV_PREF_KEY, prev ? '0' : '1')
+      return !prev
+    })
+  }
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="border-b border-charcoal/10 bg-white px-4 sm:px-6">
-        <div className="flex items-center justify-between py-3">
-          <div className="flex items-center gap-3">
-            <img src={monogram} alt="CG" className="h-9 w-9" />
-            <div className="flex flex-col">
-              <img src={wordmark} alt="Charcoal Group" className="hidden h-4 sm:block" />
-              <span className="text-sm font-medium tracking-wide text-charcoal/80">
-                People Center
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-sm font-medium">{displayName}</p>
-              {profile && (
-                <p className="text-xs uppercase tracking-wide text-charcoal/50">
-                  {profile.role.replace(/_/g, ' ')}
-                </p>
-              )}
-            </div>
-            <button
-              onClick={() => void signOut()}
-              className="flex items-center gap-1.5 rounded-md border border-charcoal/20 px-2.5 py-1.5 text-sm hover:bg-charcoal/5"
-            >
-              <LogOut className="h-4 w-4" />
-              <span className="hidden sm:inline">Sign out</span>
-            </button>
-          </div>
+    <div className="flex min-h-screen bg-surface text-charcoal">
+      {/* Left navigation rail — collapsed by default, icons always visible */}
+      <aside
+        className={`flex shrink-0 flex-col border-r border-surface-line bg-surface-muted transition-all ${
+          expanded ? 'w-52' : 'w-14'
+        }`}
+      >
+        <div className="flex h-14 items-center justify-center border-b border-surface-line">
+          <img src={monogram} alt="CG" className="h-8 w-8" />
         </div>
-        {visibleNav.length > 0 && (
-          <nav className="-mb-px flex gap-1">
-            {visibleNav.map((n) => (
+        <nav className="flex flex-1 flex-col gap-1 p-2" aria-label="Primary">
+          {visibleNav.map((n) => {
+            const Icon = n.icon
+            const active = view === n.view
+            return (
               <button
                 key={n.view}
                 onClick={() => onNavigate(n.view)}
-                className={`border-b-2 px-3 py-2 text-sm ${
-                  view === n.view
-                    ? 'border-charcoal font-medium'
-                    : 'border-transparent text-charcoal/60 hover:text-charcoal'
+                title={expanded ? undefined : n.label}
+                aria-current={active ? 'page' : undefined}
+                className={`flex items-center gap-3 rounded-md px-2.5 py-2 text-sm ${
+                  active
+                    ? 'bg-cg-orange-soft font-medium text-cg-orange'
+                    : 'text-charcoal/70 hover:bg-surface hover:text-charcoal'
                 }`}
               >
-                {n.label}
+                <Icon className="h-5 w-5 shrink-0" />
+                {expanded && <span className="truncate">{n.label}</span>}
               </button>
-            ))}
-          </nav>
-        )}
-      </header>
-      <main className="flex-1">{children}</main>
+            )
+          })}
+        </nav>
+        <button
+          onClick={toggleNav}
+          aria-label={expanded ? 'Collapse navigation' : 'Expand navigation'}
+          className="m-2 flex items-center justify-center rounded-md p-2 text-charcoal/50 hover:bg-surface hover:text-charcoal"
+        >
+          {expanded ? <ChevronsLeft className="h-4 w-4" /> : <ChevronsRight className="h-4 w-4" />}
+        </button>
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Header — app identity + user menu only */}
+        <header className="flex h-14 items-center justify-between border-b border-surface-line bg-surface px-4 sm:px-6">
+          <div className="flex items-baseline gap-2">
+            <span className="text-sm font-semibold tracking-wide">People Center</span>
+            <span className="hidden text-xs uppercase tracking-widest text-charcoal/40 sm:inline">
+              CG Platform — Charcoal Group
+            </span>
+          </div>
+          <UserMenu session={session} profile={profile} profileError={profileError} />
+        </header>
+        <main className="flex-1 bg-surface">{children}</main>
+      </div>
     </div>
+  )
+}
+
+// User menu with the role indicator: shows exactly what the app resolved
+// from user_profiles (or why it resolved nothing), so role/permission issues
+// are diagnosable from the UI instead of guesswork.
+function UserMenu({
+  session,
+  profile,
+  profileError,
+}: {
+  session: Session
+  profile: UserProfile | null
+  profileError: string | null
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const displayName =
+    profile?.display_name ?? profile?.email ?? session.user.email ?? 'Signed in'
+
+  useEffect(() => {
+    if (!open) return
+    function onClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [open])
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex items-center gap-2 rounded-md border border-surface-line px-2.5 py-1.5 text-sm hover:bg-surface-muted"
+      >
+        {!profile && <ShieldAlert className="h-4 w-4 text-warning" />}
+        <span className="max-w-40 truncate font-medium">{displayName}</span>
+        {profile && <RoleBadge role={profile.role} />}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-1 w-72 rounded-lg border border-surface-line bg-surface p-3 text-sm shadow-lg">
+          <p className="font-medium">{displayName}</p>
+          <p className="text-xs text-charcoal/60">{session.user.email}</p>
+          <div className="my-2 border-t border-surface-line" />
+          <div className="flex items-center justify-between py-1">
+            <span className="text-xs uppercase tracking-wide text-charcoal/50">
+              Role (from user_profiles)
+            </span>
+            {profile ? (
+              <RoleBadge role={profile.role} />
+            ) : (
+              <span className="rounded-full bg-warning/10 px-2 py-0.5 text-xs font-medium text-warning">
+                not resolved
+              </span>
+            )}
+          </div>
+          {!profile && (
+            <p className="rounded-md bg-warning/10 px-2 py-1.5 text-xs text-warning">
+              {profileError ?? 'No profile row found for this login.'}
+            </p>
+          )}
+          <p className="mt-2 break-all text-[10px] text-charcoal/40">
+            auth uid: {session.user.id}
+          </p>
+          <button
+            onClick={() => void signOut()}
+            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-md border border-surface-line px-2.5 py-1.5 text-sm hover:bg-surface-muted"
+          >
+            <LogOut className="h-4 w-4" /> Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function RoleBadge({ role }: { role: string }) {
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+        role === 'admin'
+          ? 'bg-cg-orange-soft text-cg-orange'
+          : 'bg-surface-muted text-charcoal/70'
+      }`}
+    >
+      {role.replace(/_/g, ' ')}
+    </span>
   )
 }

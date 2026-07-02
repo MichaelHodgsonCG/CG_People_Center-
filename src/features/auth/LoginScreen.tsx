@@ -34,7 +34,7 @@ export function LoginScreen() {
         </div>
         <form
           onSubmit={handleSubmit}
-          className="space-y-4 rounded-xl border border-charcoal/10 bg-white p-6 shadow-sm"
+          className="space-y-4 rounded-xl border border-surface-line bg-surface p-6 shadow-sm"
         >
           <div>
             <label htmlFor="email" className="mb-1 block text-sm font-medium">
@@ -47,7 +47,7 @@ export function LoginScreen() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-md border border-charcoal/20 px-3 py-2 text-sm focus:border-charcoal focus:outline-none"
+              className="w-full rounded-md border border-surface-line px-3 py-2 text-sm focus:border-charcoal focus:outline-none"
             />
           </div>
           <div>
@@ -61,18 +61,18 @@ export function LoginScreen() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-md border border-charcoal/20 px-3 py-2 text-sm focus:border-charcoal focus:outline-none"
+              className="w-full rounded-md border border-surface-line px-3 py-2 text-sm focus:border-charcoal focus:outline-none"
             />
           </div>
           {error && (
-            <p className="rounded-md bg-ember/10 px-3 py-2 text-sm text-ember">
+            <p className="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger">
               {error}
             </p>
           )}
           <button
             type="submit"
             disabled={submitting}
-            className="flex w-full items-center justify-center gap-2 rounded-md bg-charcoal px-3 py-2 text-sm font-medium text-cream transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-md bg-cg-orange px-3 py-2 text-sm font-medium text-white hover:bg-cg-orange-hover disabled:opacity-50"
           >
             <LogIn className="h-4 w-4" />
             {submitting ? 'Signing in…' : 'Sign in'}

@@ -7,6 +7,12 @@
     @apply antialiased;
   }
   body {
-    @apply bg-cream text-charcoal;
+    /* Business-application theme (PLATFORM_DESIGN_SYSTEM.md): white
+       background, black typography. */
+    @apply bg-surface text-charcoal;
+  }
+  /* Clear focus states — accessibility per the design system. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-cg-orange ring-offset-1;
   }
 }

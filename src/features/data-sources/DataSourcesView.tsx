@@ -19,7 +19,7 @@ type Stage =
   | { kind: 'done'; batchId: string; summary: ReturnType<typeof summarize> }
   | { kind: 'error'; message: string }
 
-export function ImportView({ profile }: { profile: UserProfile | null }) {
+export function DataSourcesView({ profile }: { profile: UserProfile | null }) {
   const [stage, setStage] = useState<Stage>({ kind: 'idle' })
 
   async function handleFile(file: File) {
@@ -64,7 +64,7 @@ export function ImportView({ profile }: { profile: UserProfile | null }) {
 
   return (
     <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
-      <h2 className="mb-1 text-lg font-medium">Source sync — Push roster</h2>
+      <h2 className="mb-1 text-lg font-medium">Data Sources — Push roster</h2>
       <p className="mb-6 text-sm text-charcoal/60">
         Excel export today; the same pipeline accepts a Push API response
         later. Salary and compensation fields are never read. Eligibility is
@@ -72,7 +72,7 @@ export function ImportView({ profile }: { profile: UserProfile | null }) {
       </p>
 
       {stage.kind === 'idle' && (
-        <label className="flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed border-charcoal/20 bg-white p-10 text-center hover:border-charcoal/40">
+        <label className="flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed border-surface-line bg-white p-10 text-center hover:border-charcoal/40">
           <Upload className="h-8 w-8 text-charcoal/40" />
           <span className="text-sm font-medium">Choose the Push roster export (.xlsx)</span>
           <span className="text-xs text-charcoal/50">
@@ -106,7 +106,7 @@ export function ImportView({ profile }: { profile: UserProfile | null }) {
       )}
 
       {stage.kind === 'done' && (
-        <div className="rounded-xl border border-charcoal/10 bg-white p-6">
+        <div className="rounded-xl border border-surface-line bg-white p-6">
           <div className="mb-3 flex items-center gap-2 text-sm font-medium">
             <CheckCircle2 className="h-5 w-5 text-green-700" /> Sync committed
           </div>
@@ -117,7 +117,7 @@ export function ImportView({ profile }: { profile: UserProfile | null }) {
           <p className="mt-3 text-xs text-charcoal/50">Batch {stage.batchId}</p>
           <button
             onClick={() => setStage({ kind: 'idle' })}
-            className="mt-4 rounded-md border border-charcoal/20 px-3 py-1.5 text-sm hover:bg-charcoal/5"
+            className="mt-4 rounded-md border border-surface-line px-3 py-1.5 text-sm hover:bg-surface-muted"
           >
             Run another sync
           </button>
@@ -125,12 +125,12 @@ export function ImportView({ profile }: { profile: UserProfile | null }) {
       )}
 
       {stage.kind === 'error' && (
-        <div className="rounded-xl border border-ember/30 bg-ember/5 p-6 text-sm">
-          <p className="mb-2 font-medium text-ember">Sync failed</p>
+        <div className="rounded-xl border border-danger/30 bg-danger/5 p-6 text-sm">
+          <p className="mb-2 font-medium text-danger">Sync failed</p>
           <p className="text-charcoal/70">{stage.message}</p>
           <button
             onClick={() => setStage({ kind: 'idle' })}
-            className="mt-4 rounded-md border border-charcoal/20 px-3 py-1.5 text-sm hover:bg-charcoal/5"
+            className="mt-4 rounded-md border border-surface-line px-3 py-1.5 text-sm hover:bg-surface-muted"
           >
             Start over
           </button>
@@ -155,7 +155,7 @@ function PreviewPanel({
   const review = classified.filter((c) => c.disposition === 'needs_review')
 
   return (
-    <div className="rounded-xl border border-charcoal/10 bg-white p-6">
+    <div className="rounded-xl border border-surface-line bg-white p-6">
       <div className="mb-4 flex items-center gap-2 text-sm font-medium">
         <FileSpreadsheet className="h-5 w-5 text-charcoal/50" />
         {fileName}
@@ -184,13 +184,13 @@ function PreviewPanel({
       <div className="mt-5 flex gap-3">
         <button
           onClick={onCommit}
-          className="rounded-md bg-charcoal px-4 py-2 text-sm font-medium text-cream hover:opacity-90"
+          className="rounded-md bg-cg-orange px-4 py-2 text-sm font-medium text-white hover:bg-cg-orange-hover"
         >
           Commit {summary.imported} people
         </button>
         <button
           onClick={onCancel}
-          className="rounded-md border border-charcoal/20 px-4 py-2 text-sm hover:bg-charcoal/5"
+          className="rounded-md border border-surface-line px-4 py-2 text-sm hover:bg-surface-muted"
         >
           Cancel
         </button>
@@ -209,7 +209,7 @@ function SummaryLine({
   strong?: boolean
 }) {
   return (
-    <p className={`flex justify-between border-b border-charcoal/5 py-1.5 text-sm ${strong ? 'font-medium' : ''}`}>
+    <p className={`flex justify-between border-b border-surface-line/60 py-1.5 text-sm ${strong ? 'font-medium' : ''}`}>
       <span>{label}</span>
       <span>{value}</span>
     </p>
