@@ -1,46 +1,44 @@
 # Runbook — People Center lift-and-shift into the CGOPS Platform Supabase project
 
-**Revision 2 — 2026-07-02.** Simplified for the single-user reality: there is
-exactly one People Center user (the admin), and the old People Center auth
-model does not carry forward. CGOPS Auth becomes the single auth source;
-future users are created directly in CGOPS Auth. Supersedes revision 1's
-multi-user uuid-remap procedure.
+**Revision 3 — 2026-07-02.** Architecture decision: People Center keeps NO
+user-profile authority. CGOPS profiles/users are the source of truth for
+identity, role, and app access. This runbook has two phases:
 
-**What today IS:** the People Center app runs exactly as it does now, but its
-`people_center_*` tables live inside the CGOPS Platform Supabase project, and
-its one login is a CGOPS auth user.
+- **Phase A (migration day):** lift-and-shift the `people_center_*` tables
+  into the CGOPS project. `people_center_user_profiles` ships as an EMPTY
+  schema + one temporary compatibility row for the single admin. No signup
+  trigger. No legacy auth rows.
+- **Phase B (immediately after cutover):** swap the permission authority to
+  CGOPS profiles — two reading points, then drop the People Center profile
+  tables entirely.
 
-**What today is NOT:** no CGOPS SSO/permission integration, no shared
-locations/positions vocabulary, no people deduplication, no schema or RLS
-redesign.
+Phase B is deliberately NOT folded into migration day: the swap must be
+written and verified against the real CGOPS profile schema (table name, role
+values, RLS self-read), which only exists in the CGOPS project — and cutover
+day should change one variable at a time. Details in §B.
 
 ---
 
-## How auth is handled (the one design decision)
+## Why the compatibility row is still needed on day one (the dependency map)
 
-Three tables carry FKs into `auth.users`:
-`people_center_user_profiles.auth_user_id`,
-`people_center_user_scopes.auth_user_id`, and
-`people_center_people.auth_user_id`. Rows referencing the OLD project's auth
-uuids would abort the import — so instead of remapping uuids, we simply
-**don't ship the legacy auth-linked rows**:
+`people_center_user_profiles` is load-bearing in exactly two places:
 
-- Dump **excludes the DATA** (not the schema) of
-  `people_center_user_profiles` and `people_center_user_scopes`. Those tables
-  hold nothing but the old login wiring — one admin profile row and any scope
-  rows, all recreatable in one statement.
-- `people_center_people.auth_user_id` is expected to be NULL everywhere (the
-  sync pipeline never sets it); a pre-flight query confirms.
-- `people_center_audit_log.actor_auth_uid` values keep the old uuids as a
-  historical trace — the column is deliberately unconstrained, so this is
-  fine and preserves the audit record faithfully.
-- After import, one bootstrap upsert creates your admin profile against your
-  CGOPS auth user. Done — no uuid mapping anywhere.
+1. **Database:** `people_center_is_admin()` reads it, and that function is
+   bound into every write policy and admin-only read policy (40 of the 53
+   RLS policies). No admin profile row → the whole app is read-only and
+   Data Sources is dark.
+2. **App:** one query in `src/features/auth/useSession.ts` resolves the role;
+   `App.tsx`, `permissions/index.ts`, `AppShell.tsx`, and
+   `DataSourcesView.tsx` all consume the resulting object (role gate, role
+   badge, import attribution).
 
-This whole flow was dry-run end-to-end against a simulated CGOPS destination
-(own `auth.users`, citext installed, pre-existing tables): import clean,
-bootstrap upsert works, `people_center_is_admin()` resolves for the CGOPS
-uid, full admin CRUD under RLS, destination tables untouched.
+`people_center_user_scopes` is referenced by NOTHING in app code (a type
+definition only) — it ships empty and is dropped in Phase B with no code
+change.
+
+So: without the table the app runs degraded (login works, directory renders,
+no admin functions, all writes RLS-blocked). One temporary row keeps 100% of
+functionality on migration day; Phase B then removes the layer properly.
 
 ## Values to gather
 
@@ -49,7 +47,8 @@ uid, full admin CRUD under RLS, destination tables untouched.
 | Source DB connection string (`SOURCE_DB_URL`) | Source project (`jgwuaixztxatzjjxsvzc`) → Connect → **Session pooler** or direct, port 5432 — not the transaction pooler (6543) |
 | CGOPS DB connection string (`DEST_DB_URL`) | CGOPS project → Connect → same rule |
 | CGOPS project ref + anon key | CGOPS dashboard → Settings → API |
-| Your CGOPS login email | The email you'll sign in with from now on |
+| Your CGOPS login email | The account you'll sign in with |
+| CGOPS profile schema facts (for Phase B) | CGOPS SQL editor — see §B.0 |
 
 The app uses exactly two env vars (`VITE_SUPABASE_URL`,
 `VITE_SUPABASE_ANON_KEY`) — no service role key, no Edge Functions, no
@@ -58,32 +57,30 @@ storage.
 Pre-flight, run once on each side:
 
 ```sql
--- SOURCE: prefix migration applied, and no people→auth links (expect 15 / 0 / 0)
+-- SOURCE: prefix migration applied; no people→auth links (expect 15 / 0 / 0)
 select
   (select count(*) from pg_tables where schemaname='public' and tablename ~ '^people_center_') as pc_tables,
   (select count(*) from pg_tables where schemaname='public' and tablename !~ '^people_center_') as unprefixed,
   (select count(*) from people_center_people where auth_user_id is not null) as people_auth_links;
--- if people_auth_links > 0: clear them before dumping —
+-- if people_auth_links > 0:
 --   update people_center_people set auth_user_id = null where auth_user_id is not null;
--- (relink to CGOPS uids afterwards if ever needed; nothing in the app reads this today)
 
--- CGOPS: no name collisions (expect 0), citext location (see step 4)
+-- CGOPS: no name collisions (expect 0), citext location (see A4)
 select count(*) from pg_tables where schemaname='public' and tablename ~ '^people_center_';
 select e.extname, n.nspname from pg_extension e
 join pg_namespace n on n.oid = e.extnamespace where e.extname = 'citext';
 ```
 
-Also check `select version();` on both sides and use a `pg_dump`/`psql` at
-least as new as the source server.
+Check `select version();` on both sides; use a `pg_dump`/`psql` at least as
+new as the source server.
 
 ---
 
-## The migration
+## Phase A — migration day
 
-Freeze first: no People Center edits/imports from here until the smoke test
-passes. (You are the only user — just don't use the app.)
+Freeze first: no People Center edits/imports until the smoke test passes.
 
-### 1. Backup both sides
+### A1. Backup both sides + snapshot source counts
 
 ```bash
 export SOURCE_DB_URL='postgresql://...'   # quotes matter
@@ -94,9 +91,8 @@ pg_dump "$SOURCE_DB_URL" --format=custom --file="backup_people_center_${STAMP}.d
 pg_dump "$DEST_DB_URL"   --format=custom --file="backup_cgops_${STAMP}.dump"
 ```
 
-Keep both files. Confirm the CGOPS dashboard also shows recent automated
-backup / PITR coverage. Snapshot the source row counts for the verification
-diff (save the output):
+Confirm the CGOPS dashboard also shows recent automated backup / PITR
+coverage. Save the source row counts as the verification reference:
 
 ```sql
 select 'people_center_audit_log' t, count(*) n from people_center_audit_log
@@ -113,10 +109,10 @@ union all select 'people_center_position_mappings', count(*) from people_center_
 union all select 'people_center_positions', count(*) from people_center_positions
 union all select 'people_center_regions', count(*) from people_center_regions
 order by 1;
--- user_profiles / user_scopes intentionally omitted: their data does not travel
+-- user_profiles / user_scopes intentionally omitted: their data never travels
 ```
 
-### 2. Dump the People Center public schema + data
+### A2. Dump — schema + data, minus every legacy-auth row
 
 ```bash
 pg_dump "$SOURCE_DB_URL" \
@@ -129,18 +125,19 @@ pg_dump "$SOURCE_DB_URL" \
   --file="people_center_export_${STAMP}.sql"
 ```
 
-- `--schema=public` carries all 15 tables, 4 helper functions, indexes,
-  constraints, triggers, and RLS policies — and by construction excludes
-  `auth`, `storage`, and every Supabase system schema.
-- The two `--exclude-table-data` flags ship those tables **empty** (schema,
-  constraints, and policies still travel) — this is what removes the legacy
-  auth dependency.
-- No `--clean`: the dump contains no DROP statements, ever.
+- All 15 tables, 4 helper functions, indexes, constraints, triggers, and RLS
+  policies travel; `auth`, `storage`, and system schemas are excluded by
+  construction.
+- The two `--exclude-table-data` flags are the "do not migrate old
+  auth-linked rows" directive: those tables arrive EMPTY.
+- `people_center_audit_log.actor_auth_uid` keeps old uuids as an
+  unconstrained historical trace — the audit record stays faithful.
+- No `--clean`: the dump contains no DROP statements.
 
-### 3. Strip the schema statements that collide with the destination
+### A3. Strip the colliding schema statements
 
-Postgres 15+ `pg_dump` emits `CREATE SCHEMA public;`, which errors on every
-Supabase project and aborts the import (verified in the dry run):
+Postgres 15+ `pg_dump` emits `CREATE SCHEMA public;`, which aborts the import
+on every Supabase destination (verified in the dry run):
 
 ```bash
 cp "people_center_export_${STAMP}.sql" "people_center_import_${STAMP}.sql"
@@ -150,15 +147,12 @@ sed -i.bak \
   "people_center_import_${STAMP}.sql"
 ```
 
-### 4. Import into CGOPS
+### A4. Import into CGOPS
 
-First, citext (from the pre-flight query):
-- absent → `create extension citext with schema public;` in the CGOPS SQL editor
-- present in `public` → nothing to do
-- present in `extensions` → don't move it; point the dump at it instead:
-  `sed -i.bak2 's/public\.citext/extensions.citext/g' "people_center_import_${STAMP}.sql"`
-
-Then:
+citext first (from pre-flight):
+- absent → `create extension citext with schema public;`
+- in `public` → nothing to do
+- in `extensions` → `sed -i.bak2 's/public\.citext/extensions.citext/g' "people_center_import_${STAMP}.sql"`
 
 ```bash
 psql "$DEST_DB_URL" \
@@ -167,72 +161,49 @@ psql "$DEST_DB_URL" \
   --file="people_center_import_${STAMP}.sql"
 ```
 
-All-or-nothing: any error rolls the entire import back and CGOPS is
-untouched. Nothing is dropped or overwritten — only `people_center_*`
-objects are created, alongside existing CGOPS tables.
+All-or-nothing; any error rolls back completely and CGOPS is untouched.
 
-### 5. Create/confirm your CGOPS auth user
+### A5. Create/confirm your CGOPS auth user
 
 CGOPS dashboard → Authentication. If your email already has a CGOPS login,
-you're done. If not: Add user with your email and a password. This is the
-account you'll sign in to People Center with from now on.
+done; otherwise Add user. This is the identity People Center uses from now
+on. Future users: always created here — never a People Center-specific
+signup path.
 
-### 6. Point People Center at your CGOPS auth id
+### A6. TEMPORARY compatibility row (not an authority)
 
-One statement in the CGOPS SQL editor (same upsert as the README bootstrap):
+One row so `people_center_is_admin()` and the app's role resolution work
+until Phase B replaces them. This is scaffolding, not a profile system:
 
 ```sql
+-- TEMPORARY compatibility layer — remove in Phase B (§B4)
 insert into public.people_center_user_profiles (auth_user_id, email, role, updated_by_name)
-select id, email, 'admin', 'cgops-migration'
+select id, email, 'admin', 'phase-a-compat'
 from auth.users
 where email = 'you@example.com'   -- ← your CGOPS login email
 on conflict (auth_user_id) do update
-  set role = 'admin', updated_by_name = 'cgops-migration';
+  set role = 'admin', updated_by_name = 'phase-a-compat';
 ```
 
-That's the entire auth migration. (Scopes aren't enforced in the current
-phase, so no `people_center_user_scopes` rows are needed; add them when
-Phase 2 makes scopes meaningful.)
+Do NOT add rows for anyone else. New access grants wait for Phase B and come
+from CGOPS profiles.
 
-### 7. Signup trigger: **skip it** (recommended)
+### A7. No signup trigger — and drop the orphaned function
 
-Do **not** recreate `people_center_on_auth_user_created` in CGOPS.
-
-Why skipping is better here:
-- In the source project, auth pool == People Center users, so auto-creating
-  a profile per signup made sense. In CGOPS the pool is every platform user —
-  the trigger would silently create a People Center viewer row for **every**
-  CGOPS signup forever: row noise now, and a real hazard later when profile
-  existence starts gating People Center access.
-- People Center role grants are deliberate admin acts anyway. Creating the
-  profile row IS the grant — one upsert per new user (below), done when you
-  decide someone gets access. This matches the CGOPS-as-auth-source end
-  state (profiles become a projection of granted access, not of signups).
-- One less People Center object attached to `auth.users` — less legacy to
-  unwind at full integration.
-
-Cost: none today. The app already handles a login without a profile row
-gracefully (the user menu shows "No people_center_user_profiles row … run
-the admin bootstrap SQL"), which is exactly the right behaviour for a CGOPS
-user who hasn't been granted People Center access.
-
-**Adding a future People Center user** (after creating them in CGOPS Auth):
+Per the architecture decision, `people_center_on_auth_user_created` is NOT
+recreated in CGOPS: CGOPS owns signups, and People Center must not react to
+them with its own profile rows. The trigger function arrived with the dump;
+remove it so no one wires it back up:
 
 ```sql
-insert into public.people_center_user_profiles (auth_user_id, email, role, updated_by_name)
-select id, email, 'viewer', 'admin-grant'   -- or their real role
-from auth.users where email = 'new.user@example.com'
-on conflict (auth_user_id) do update set role = excluded.role;
+drop function if exists public.people_center_handle_new_user();
 ```
 
-Optional tidy-up (the trigger function arrives with the dump and is now
-unused): `drop function if exists public.people_center_handle_new_user();`
-Harmless either way.
-
-### Verification (before touching the app)
+### A8. Verify
 
 ```sql
--- objects (expect 15 / 4 / 53 / 40 / 54 / 11 / 15)
+-- objects (expect 15 / 3 / 53 / 40 / 54 / 11 / 15)
+-- (3 functions: is_admin, current_person_id, set_updated_at — handle_new_user dropped in A7)
 select
   (select count(*) from pg_tables where schemaname='public' and tablename ~ '^people_center_') as tables,
   (select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
@@ -247,76 +218,56 @@ select
      where n.nspname='public' and not t.tgisinternal and c.relname ~ '^people_center_') as triggers,
   (select count(*) from pg_tables where schemaname='public'
      and tablename ~ '^people_center_' and rowsecurity) as rls_enabled;
--- functions count is 3 if you dropped people_center_handle_new_user in step 7
 
--- data: run the step-1 row-count query here and diff against the saved
--- source snapshot — must match exactly (13 tables; profiles/scopes excluded)
+-- data: re-run the A1 row-count query here; must equal the saved snapshot
 
--- auth wiring (expect 1 / 0)
+-- auth wiring (expect 1 / 0 / 0)
 select
-  (select count(*) from people_center_user_profiles where role = 'admin') as admin_profiles,
+  (select count(*) from people_center_user_profiles) as compat_rows,
+  (select count(*) from people_center_user_scopes) as scope_rows,
   (select count(*) from people_center_user_profiles p
      left join auth.users u on u.id = p.auth_user_id where u.id is null) as broken_links;
 
--- citext survived (expect 2 rows: user_profiles.email, people.email)
+-- citext survived (expect 2 rows)
 select table_name, column_name from information_schema.columns
 where table_schema='public' and udt_name='citext' and table_name ~ '^people_center_';
 ```
 
-### 8. Update Vercel env vars
+### A9. Cut the app over and smoke test
 
-Vercel → `cg-people-center` → Settings → Environment Variables (Production
-at minimum; Preview/Development if you use them):
+Vercel → `cg-people-center` → Settings → Environment Variables:
+`VITE_SUPABASE_URL` → `https://<CGOPS_PROJECT_REF>.supabase.co`;
+`VITE_SUPABASE_ANON_KEY` → CGOPS anon key. Vite inlines at build time —
+**redeploy required**. Update local `.env` (and `.env.example` in the repo
+afterwards).
 
-| Variable | New value |
-|---|---|
-| `VITE_SUPABASE_URL` | `https://<CGOPS_PROJECT_REF>.supabase.co` |
-| `VITE_SUPABASE_ANON_KEY` | CGOPS anon key |
-
-Vite inlines these at build time — a redeploy is required, not just the edit.
-Update your local `.env` too, and `.env.example` in the repo afterwards.
-
-### 9. Redeploy and smoke test
-
-Redeploy the Vercel project, then:
-
-- [ ] **Login** with your CGOPS credentials.
-- [ ] **Role badge** shows `admin` in the user menu ("Role (from
-      people_center_user_profiles)") — proves step 6 worked.
-- [ ] **Directory loads** with the full population, positions and locations
-      shown per row (proves people/assignments/positions/locations FKs and
-      embedded joins).
-- [ ] A **"Needs review"-flagged person** still shows the chip + note.
-- [ ] **Directory filters**: location dropdown populated, kind filter works.
-- [ ] **Data Sources** shows prior import batches with correct counts
-      (admin-only RLS working).
-- [ ] **Mappings resolve**: dry-run the Push roster sync with the May file —
-      positions/locations map; cancel before commit (or commit and expect
-      all-duplicates, which itself proves re-sync idempotency).
-- [ ] **Audit log intact**: `select count(*) from people_center_audit_log;`
-      equals the source snapshot.
-- [ ] **No-profile behaviour**: sign in as (or create) a CGOPS user with no
-      profile row — app shows the "no profile" notice in the user menu and no
-      admin navigation. That's the designed post-trigger behaviour.
+Smoke test:
+- [ ] Login with CGOPS credentials.
+- [ ] Role badge shows `admin` (proves A6).
+- [ ] Directory loads fully, positions + locations per row.
+- [ ] A flagged person still shows "Needs review" + note.
+- [ ] Filters work (locations dropdown populated).
+- [ ] Data Sources shows prior batches with correct counts.
+- [ ] Mapping dry-run resolves positions/locations (cancel before commit, or
+      commit and expect all-duplicates — that itself proves idempotency).
+- [ ] `select count(*) from people_center_audit_log;` equals the snapshot.
+- [ ] A CGOPS user with no compat row sees the "no profile" notice and no
+      admin surface — correct interim behaviour.
 
 Unfreeze. Keep the source project untouched for **7 days**, then decommission.
 
-### 10. Rollback plan
+### A10. Rollback
 
-The source project is never modified by this runbook, so every rollback is
-cheap:
+The source is never modified, so:
 
-- **Import fails** → `--single-transaction` already rolled everything back;
-  CGOPS untouched, app still on source, zero impact. Fix (usual suspects:
-  citext location, an un-stripped `CREATE SCHEMA public`, old client
-  `pg_dump`), re-run.
-- **Deploy fails** → Vercel Instant Rollback to the previous deployment
-  (still carrying source env vars). Databases need nothing.
-- **App on CGOPS but broken** → revert the two env vars / Instant Rollback →
-  you're back on the source with data exactly as at freeze. Diagnose CGOPS
-  at leisure (verification section pinpoints what's missing).
-- **Data incomplete** → don't cut over (or roll back as above), then tear
-  down ONLY the People Center objects in CGOPS and re-import:
+- **Import fails** → single transaction already rolled back; app still on
+  source; fix and re-run.
+- **Deploy fails** → Vercel Instant Rollback (previous deployment carries the
+  source env vars).
+- **App on CGOPS but broken** → revert the two env vars / Instant Rollback;
+  source data is exactly as at freeze.
+- **Data incomplete** → tear down ONLY People Center objects in CGOPS and
+  re-import:
 
   ```sql
   drop table if exists
@@ -331,27 +282,153 @@ cheap:
     public.people_center_is_admin(), public.people_center_current_person_id(),
     public.people_center_set_updated_at(), public.people_center_handle_new_user();
   ```
-
-  (Nothing in CGOPS references these objects, so the cascade stays inside the
-  People Center set — verified in the dry run.)
-- **Worst case, CGOPS damaged by something outside this runbook** → restore
-  from the step-1 CGOPS backup / dashboard PITR. The runbook's own commands
-  cannot produce this state: no drops, single transaction.
+- **Worst case (operator error outside the runbook)** → A1 CGOPS backup /
+  dashboard PITR.
 
 ---
+
+## Phase B — CGOPS becomes the authority (immediately after cutover)
+
+Target: within days of A9, not weeks. Until B lands, the compat row is the
+only thing granting admin — that is the TODO this section discharges.
+The swap is small because authority is concentrated in exactly two reading
+points (see the dependency map): one SQL function and one app query.
+
+### B0. Confirm the CGOPS profile facts (fill these in first)
+
+In the CGOPS SQL editor, confirm and record:
+
+```sql
+-- 1. the profile table's name and shape (assumed below: public.user_profiles)
+select column_name, data_type from information_schema.columns
+where table_schema = 'public' and table_name = 'user_profiles' order by ordinal_position;
+
+-- 2. the role vocabulary and which value(s) mean "People Center admin"
+select distinct role from public.user_profiles;
+
+-- 3. RLS: can an authenticated user read their OWN profile row?
+select policyname, cmd, qual from pg_policies
+where schemaname = 'public' and tablename = 'user_profiles';
+```
+
+If any of these differ from the assumptions below, adjust the snippets —
+that's exactly why B is a separate, verified step and not folded into
+migration day.
+
+### B1. Swap the database authority (one statement, all 53 policies follow)
+
+Policies bind `people_center_is_admin()` by OID, so replacing its body swaps
+the permission source everywhere at once — no policy edits:
+
+```sql
+create or replace function public.people_center_is_admin()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.user_profiles          -- ← CGOPS profiles (confirm name, B0)
+    where auth_user_id = auth.uid()    -- ← confirm column (B0)
+      and role = 'admin'               -- ← confirm CGOPS's admin semantic (B0)
+  );
+$$;
+```
+
+Also re-point the (currently unused, reserved for audit attribution) person
+resolver at the link the schema already carries:
+
+```sql
+create or replace function public.people_center_current_person_id()
+returns uuid
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select id
+  from public.people_center_people
+  where auth_user_id = auth.uid();
+$$;
+```
+
+Verify before touching the app: as your CGOPS user (SQL editor impersonation
+or a quick API call), `select public.people_center_is_admin();` must be true
+based on your CGOPS role — with the compat row still present as a safety net.
+
+### B2. Swap the app's profile read (one file + role mapping)
+
+`src/features/auth/useSession.ts` is the only query. Point it at the CGOPS
+profile table and adapt the row to the existing `UserProfile` shape so
+`permissions/`, `AppShell`, and `DataSourcesView` need no changes:
+
+- `.from('people_center_user_profiles')` → `.from('user_profiles')` (CGOPS —
+  confirm name/columns from B0).
+- Map the CGOPS role vocabulary onto People Center's `AppRole` (today only
+  `admin` matters; everyone else is effectively `viewer` until Phase 2).
+- `person_id` no longer comes from the profile: resolve it from
+  `people_center_people.auth_user_id` (nullable; only used to attribute
+  import batches), or leave null until person-linking matters.
+
+The `can()` signature and the rest of the app stay untouched — this is the
+seam the permissions module was built for.
+
+### B3. Verify the swap
+
+- [ ] Login → role badge reflects your CGOPS role.
+- [ ] Data Sources visible and a mapping dry-run works (RLS write path via
+      the new `is_admin()`).
+- [ ] A non-admin CGOPS user: directory visible, no Data Sources, writes
+      refused.
+
+### B4. Remove the compatibility layer for good
+
+```sql
+-- the FK from user_profiles.person_id and the tables themselves go together;
+-- nothing else references these tables (verified: app code has zero
+-- user_scopes references, and B2 removed the last user_profiles read)
+drop table if exists public.people_center_user_scopes;
+drop table if exists public.people_center_user_profiles;
+```
+
+Update the repo to match: remove the `UserProfile`-table types if unused,
+update README bootstrap/troubleshooting sections (they describe the retired
+model), and record the decision as an ADR ("CGOPS profiles are the identity
+and permission authority; People Center holds no user-profile tables").
+
+### B5. Rollback (Phase B only)
+
+Every B step is independently reversible without touching data:
+- B1 → re-apply the original function bodies (in the A2 dump file) — the
+  compat row still exists until B4, so behaviour reverts exactly.
+- B2 → revert the commit.
+- B4 is the only destructive step — do it LAST, after B3 is green. (If ever
+  needed again, the empty-table DDL is in the dump file.)
+
+---
+
+## What this plan explicitly does NOT do
+
+- No People Center signup trigger in CGOPS, ever (A7).
+- No People Center profile authority beyond the days between A6 and B4.
+- No migration of legacy auth rows, identities, or passwords.
+- No schema/RLS redesign beyond the two function-body swaps that ARE the
+  authority change; no shared org vocabulary; no people deduplication —
+  those remain future, separate decisions.
 
 ## Known consequences to accept
 
 - **Shared authenticated pool.** Any CGOPS-authenticated user can read the
-  People Center directory, org reference, and assignments via the API — the
-  SELECT policies are `to authenticated using (true)`. Writes, `audit_log`,
-  and `import_*` remain People Center-admin-only. Acceptable interim per
-  revision-2 direction; Phase 2 visibility rules (or a minimal
-  profile-holder scoping of those SELECT policies) close it.
+  People Center directory, org reference, and assignments (`to authenticated
+  using (true)` SELECT policies). Writes, `audit_log`, and `import_*` stay
+  admin-only. Phase 2 visibility rules (or scoping those SELECTs to CGOPS
+  role holders once B1 establishes the pattern) close this.
 - **Old audit uuids.** `people_center_audit_log.actor_auth_uid` keeps
-  source-project uuids as history. `actor_name` makes rows human-readable
-  regardless.
+  source-project uuids as history; `actor_name` keeps rows readable.
 - **Migration lineage.** Never run the historical People Center migration
-  files against CGOPS — the dump already carries the final state. Future
-  People Center schema changes are applied to CGOPS as new, prefixed
-  migrations in the CGOPS project's own lineage.
+  files against CGOPS — the dump carries the final state. Future People
+  Center schema changes are new, prefixed migrations in the CGOPS project's
+  own lineage (Phase B's function swaps should be committed as the first
+  one).

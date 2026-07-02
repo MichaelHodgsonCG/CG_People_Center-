@@ -3,12 +3,16 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../../lib/supabase'
 import type { UserProfile } from '../../types'
 
-// Session + app profile in one hook. The profile row is created by the
-// people_center_handle_new_user() trigger on signup (backfilled for earlier
-// users by migration 20260702090000). The app's role detection reads
-// people_center_user_profiles.role through this hook and nothing else — no cached role
-// state. A missing row or a fetch error is SURFACED (profileError /
-// profile === null shows in the user menu), never swallowed.
+// Session + app profile in one hook. The app's role detection reads
+// people_center_user_profiles.role through this hook and nothing else — no
+// cached role state. A missing row or a fetch error is SURFACED
+// (profileError / profile === null shows in the user menu), never swallowed.
+//
+// TODO(cgops-authority): people_center_user_profiles is a TEMPORARY
+// compatibility layer after the CGOPS lift-and-shift — CGOPS profiles are
+// the identity/role authority. This is the app's ONLY profile query; Phase B
+// of docs/RUNBOOK_CGOPS_LIFT_AND_SHIFT.md repoints it at the CGOPS profile
+// table (with a role mapping) and then drops the People Center tables.
 export function useSession() {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
