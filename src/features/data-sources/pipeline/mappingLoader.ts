@@ -16,17 +16,17 @@ export async function loadMappings(
 ): Promise<MappingTables> {
   const [positionsRes, locationsRes, placeholderRes] = await Promise.all([
     supabase
-      .from('position_mappings')
+      .from('people_center_position_mappings')
       .select(
-        'source_value, positions ( id, name, people_center_eligible, default_person_kind )',
+        'source_value, positions:people_center_positions ( id, name, people_center_eligible, default_person_kind )',
       )
       .eq('source_system', sourceSystem),
     supabase
-      .from('location_mappings')
-      .select('source_value, locations ( id, name )')
+      .from('people_center_location_mappings')
+      .select('source_value, locations:people_center_locations ( id, name )')
       .eq('source_system', sourceSystem),
     supabase
-      .from('positions')
+      .from('people_center_positions')
       .select('id')
       .eq('name', PLACEHOLDER_POSITION_NAME)
       .maybeSingle(),

@@ -4,9 +4,9 @@ import { supabase } from '../../lib/supabase'
 import type { UserProfile } from '../../types'
 
 // Session + app profile in one hook. The profile row is created by the
-// handle_new_user() trigger on signup (backfilled for earlier users by
-// migration 20260702090000). The app's role detection reads
-// user_profiles.role through this hook and nothing else — no cached role
+// people_center_handle_new_user() trigger on signup (backfilled for earlier
+// users by migration 20260702090000). The app's role detection reads
+// people_center_user_profiles.role through this hook and nothing else — no cached role
 // state. A missing row or a fetch error is SURFACED (profileError /
 // profile === null shows in the user menu), never swallowed.
 export function useSession() {
@@ -34,7 +34,7 @@ export function useSession() {
     }
     let cancelled = false
     supabase
-      .from('user_profiles')
+      .from('people_center_user_profiles')
       .select('*')
       .eq('auth_user_id', session.user.id)
       .maybeSingle()
@@ -48,7 +48,7 @@ export function useSession() {
           setProfileError(
             data
               ? null
-              : 'No user_profiles row for this login — run the admin bootstrap SQL (README).',
+              : 'No people_center_user_profiles row for this login — run the admin bootstrap SQL (README).',
           )
         }
       })

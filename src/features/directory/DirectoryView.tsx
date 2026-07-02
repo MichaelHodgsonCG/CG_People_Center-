@@ -43,12 +43,13 @@ export function DirectoryView({ isAdmin }: { isAdmin?: boolean }) {
   useEffect(() => {
     let cancelled = false
     supabase
-      .from('people')
+      .from('people_center_people')
       .select(
         `id, full_name, preferred_name, status, person_kind,
          data_quality_status, data_quality_note,
-         position_assignments ( is_primary, ended_on,
-           positions ( name ), locations ( name ) )`,
+         position_assignments:people_center_position_assignments ( is_primary, ended_on,
+           positions:people_center_positions ( name ),
+           locations:people_center_locations ( name ) )`,
       )
       .neq('status', 'departed')
       .order('full_name')

@@ -118,8 +118,8 @@ export function AppShell({
 }
 
 // User menu with the role indicator: shows exactly what the app resolved
-// from user_profiles (or why it resolved nothing), so role/permission issues
-// are diagnosable from the UI instead of guesswork.
+// from people_center_user_profiles (or why it resolved nothing), so
+// role/permission issues are diagnosable from the UI instead of guesswork.
 function UserMenu({
   session,
   profile,
@@ -161,7 +161,7 @@ function UserMenu({
           <div className="my-2 border-t border-surface-line" />
           <div className="flex items-center justify-between py-1">
             <span className="text-xs uppercase tracking-wide text-charcoal/50">
-              Role (from user_profiles)
+              Role (from people_center_user_profiles)
             </span>
             {profile ? (
               <RoleBadge role={profile.role} />

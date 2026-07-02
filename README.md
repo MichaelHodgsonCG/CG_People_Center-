@@ -59,6 +59,16 @@ SQL editor. Supabase project configuration: Data APIs enabled, new tables
 automatically exposed, automatic RLS enabled — migrations still enable RLS
 explicitly on every table; no `anon` policies exist anywhere.
 
+Every People Center-owned database object (tables, helper functions,
+indexes, constraints, triggers, policies) carries the `people_center_`
+prefix (migration `20260702120000`) so the project can later lift-and-shift
+into the CGOPS Platform Supabase project without name collisions. New
+objects must follow the same convention. The earlier migrations create
+objects under their original names and `20260702120000` renames them —
+filename order matters, and the pre-rename migrations are no longer
+individually re-runnable on an already-renamed database (the guarded rename
+migration is).
+
 ### Bootstrap the first admin
 
 Create the first user (Supabase dashboard → Authentication → Add user), then
@@ -67,7 +77,7 @@ profile row already exists (a plain UPDATE silently matches 0 rows if the
 auth user predates the migrations):
 
 ```sql
-insert into public.user_profiles (auth_user_id, email, role, updated_by_name)
+insert into public.people_center_user_profiles (auth_user_id, email, role, updated_by_name)
 select id, email, 'admin', 'bootstrap'
 from auth.users
 where email = 'you@charcoalgroup.ca'
@@ -79,7 +89,7 @@ Every later role grant is done by an admin.
 
 ### Troubleshooting: signed in but no admin navigation
 
-The app resolves the role from `user_profiles.role` for the signed-in
+The app resolves the role from `people_center_user_profiles.role` for the signed-in
 `auth_user_id` on every load — nothing is cached. The user menu (top right)
 shows exactly what was resolved: the role badge, or a "not resolved" warning
 with the reason and your auth uid. To inspect the database side:
@@ -87,7 +97,7 @@ with the reason and your auth uid. To inspect the database side:
 ```sql
 select u.id as auth_user_id, u.email, p.id as profile_id, p.role
 from auth.users u
-left join public.user_profiles p on p.auth_user_id = u.id;
+left join public.people_center_user_profiles p on p.auth_user_id = u.id;
 ```
 
 - **`profile_id` is null** → the auth user predates the Phase 0 migrations,
