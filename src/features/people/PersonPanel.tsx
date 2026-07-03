@@ -27,6 +27,7 @@ import type {
 import {
   addNote,
   clearReviewFlag,
+  purgeRelationshipNotes,
   fetchNotes,
   fetchPersonDetail,
   fetchPersonName,
@@ -193,6 +194,13 @@ export function PersonPanel({ personId, session, profile, onClose, onChanged }: 
           />
         ) : (
           <div className="space-y-5 p-5">
+            {person.status === 'departed' && (
+              <p className="rounded-md border border-surface-line bg-surface-muted px-3 py-2 text-sm text-charcoal/70">
+                Departed{person.departed_on ? ` ${person.departed_on}` : ''} — notes
+                are archived (admin-only) with a five-year hold per the retention
+                policy.
+              </p>
+            )}
             {/* Leadership half of the cheat sheet */}
             <section className="rounded-xl border border-surface-line p-4">
               <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-charcoal/50">
@@ -558,6 +566,31 @@ function AdminEditor({
           </button>
         </div>
       )}
+
+      <div className="rounded-md border border-surface-line p-3 text-sm">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-charcoal/50">
+          Retention actions
+        </p>
+        <button
+          onClick={() => {
+            if (
+              window.confirm(
+                `Purge ALL relationship notes about ${person.full_name}? This is the subject-request purge — irreversible and audited.`,
+              )
+            ) {
+              purgeRelationshipNotes(person.id)
+                .then((n) => {
+                  window.alert(`${n} relationship note(s) purged (audited).`)
+                  onSaved()
+                })
+                .catch((e: Error) => setError(e.message))
+            }
+          }}
+          className="rounded-md border border-danger/40 px-2.5 py-1.5 text-xs font-medium text-danger hover:bg-danger/5"
+        >
+          Purge relationship notes (subject request)
+        </button>
+      </div>
 
       <div className="grid grid-cols-2 gap-3">
         <Field label="Preferred name">

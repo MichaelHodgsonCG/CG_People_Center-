@@ -6,7 +6,9 @@
   CGOPS). Supersedes the role-ladder reading rules of ADR 0007 §1/§4 once
   implemented; ADR 0007's categories, constraints, audited-read mechanism,
   and author/self rules are unchanged.
-- **Implementation:** gated on reporting-line data (see rollout below).
+- **Implementation:** COMPLETE (2026-07-03) — migrations
+  `20260703140000_org_graph_bootstrap.sql` and
+  `20260703150000_chain_visibility_and_archive.sql`.
 
 ## The rule
 
@@ -55,6 +57,27 @@ default.
   visibility and all surfaces. Access change only; rows stay in place.
 - Only admins purge; five-year hold from departure; relationship notes
   purgeable on subject request at any time; audit log never purged.
+
+## Confirmed org data (Michael, 2026-07-03; source: CG HQ & Ops org chart Jan 2026)
+
+- Jody Palubiski (CEO) ← John Mackay (President, Beertown & Sociable),
+  Megan Stover (VP People + Culture), Cindy Fawcett.
+- John Mackay ← Tami Emuss (SKT, Oakville, Cambridge, Guelph),
+  Chris Richards (London Masonville, London White Oaks, Waterloo),
+  Camilla Johnson (Newmarket, Whitby), Caitlin O'Leary (Barrie, Toronto),
+  Danny Walker (Etobicoke, Burlington).
+- Cindy Fawcett covers The Bauer Kitchen, Sole, Wildcraft — reporting
+  directly to the CEO for now.
+- Supervisors operationally report to the manager on duty; their chain
+  anchor is the GM (accountable manager).
+- Bootstrap default: Chef de Partie → Head Chef (the template shows
+  CdP → Sous, but locations have multiple sous chefs and the data cannot
+  say which — admins refine per person in the panel). Sous → Head Chef →
+  GM → regional; all other location roles → GM; fallbacks GM → regional;
+  no-assignment people left null. manager_person_id is only set where NULL,
+  so re-running the bootstrap never overwrites admin corrections.
+- HQ scope: ops chain + VP People & Culture only (9 people rows); the rest
+  of the HQ slide (accounting, marketing, directors) stays out until needed.
 
 ## Rollout order (data before enforcement)
 
