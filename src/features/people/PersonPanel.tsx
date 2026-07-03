@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { actorFrom } from '../../lib/activity'
 import { can, toPermissionUser } from '../../permissions'
+import { DevelopmentPathSection } from './DevelopmentPathSection'
 import type {
   Note,
   NoteCategory,
@@ -239,6 +240,10 @@ export function PersonPanel({ personId, session, profile, onClose, onChanged }: 
               <FactBlock label="Strengths" value={person.strengths} />
               <FactBlock label="Risks" value={person.risks} />
             </section>
+
+            {/* Development path — chain-visible projection (ADR 0010);
+                renders nothing when RLS returns no assessments */}
+            <DevelopmentPathSection personId={person.id} />
 
             {/* Notes */}
             <section className="rounded-xl border border-surface-line p-4">
