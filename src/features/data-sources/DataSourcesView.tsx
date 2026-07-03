@@ -8,6 +8,7 @@ import { classify, summarize } from './pipeline/classify'
 import { loadMappings } from './pipeline/mappingLoader'
 import { commitBatch } from './pipeline/commit'
 import type { ClassifiedRow } from './pipeline/types'
+import { DevPathsPanel } from './DevPathsPanel'
 
 const SOURCE = 'push_roster'
 
@@ -20,6 +21,7 @@ type Stage =
   | { kind: 'error'; message: string }
 
 export function DataSourcesView({ profile }: { profile: UserProfile | null }) {
+  const [source, setSource] = useState<'roster' | 'dev_paths'>('roster')
   const [stage, setStage] = useState<Stage>({ kind: 'idle' })
 
   async function handleFile(file: File) {
@@ -64,6 +66,33 @@ export function DataSourcesView({ profile }: { profile: UserProfile | null }) {
 
   return (
     <div className="mx-auto w-full max-w-3xl p-4 sm:p-6">
+      <div className="mb-5 flex gap-2 border-b border-surface-line pb-3">
+        <button
+          onClick={() => setSource('roster')}
+          className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+            source === 'roster'
+              ? 'bg-charcoal text-white'
+              : 'border border-surface-line hover:bg-surface-muted'
+          }`}
+        >
+          Push roster
+        </button>
+        <button
+          onClick={() => setSource('dev_paths')}
+          className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+            source === 'dev_paths'
+              ? 'bg-charcoal text-white'
+              : 'border border-surface-line hover:bg-surface-muted'
+          }`}
+        >
+          Development paths
+        </button>
+      </div>
+
+      {source === 'dev_paths' && <DevPathsPanel profile={profile} />}
+
+      {source === 'roster' && (
+        <>
       <h2 className="mb-1 text-lg font-medium">Data Sources — Push roster</h2>
       <p className="mb-6 text-sm text-charcoal/60">
         Excel export today; the same pipeline accepts a Push API response
@@ -138,6 +167,8 @@ export function DataSourcesView({ profile }: { profile: UserProfile | null }) {
             Start over
           </button>
         </div>
+      )}
+        </>
       )}
     </div>
   )

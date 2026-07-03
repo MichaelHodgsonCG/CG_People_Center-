@@ -42,10 +42,11 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
 
           <Section title="The cheat sheet">
             One screen per person: role, location, reporting line, relocation
-            interest, career goals, strengths, risks, notes, and their
-            timeline. Use it before a visit or conversation so you start warm.
-            Admins and executives can edit profiles, fix positions and
-            reporting lines, and clear review flags from the Edit button.
+            interest, career goals, strengths, risks, notes, their development
+            path progress, and their timeline. Use it before a visit or
+            conversation so you start warm. Admins and executives can edit
+            profiles, fix positions and reporting lines, and clear review
+            flags from the Edit button.
           </Section>
 
           <Section title="Notes — and who can see them">
@@ -87,10 +88,14 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
           </Section>
 
           <Section title="Data Sources (admins only)">
-            Where the Push roster loads from. Re-uploading a newer roster is
-            safe: people already in People Center are left untouched, new
-            leaders are added, and anything ambiguous is imported with a
-            "needs review" flag instead of being dropped.
+            Where the Push roster and the development-path workbooks load
+            from. Re-uploading a newer roster is safe: people already in
+            People Center are left untouched, new leaders are added, and
+            anything ambiguous is imported with a "needs review" flag instead
+            of being dropped. Development paths work the same way — sync the
+            master workbook when questions change, upload a location's filled
+            workbook (one tab per manager) to record quarterly scores, and
+            re-uploads merge rather than overwrite.
           </Section>
 
           <Section title="Privacy, in one paragraph">
