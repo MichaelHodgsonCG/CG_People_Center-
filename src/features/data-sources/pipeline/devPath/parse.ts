@@ -258,8 +258,22 @@ function parseSheet(tabName: string, sheet: WorkSheet): ParsedPathSheet | Skippe
           scoreCount++
         }
       }
-      section.items.push(item)
-      itemCount++
+      // The master lists a couple of questions twice within one section —
+      // treat repeats as one item (they'd be one score row anyway) and keep
+      // the first score seen per quarter.
+      const dup = section.items.find(
+        (i) => normalizeText(i.prompt) === normalizeText(prompt),
+      )
+      if (dup) {
+        for (const q of [1, 2, 3, 4] as const) {
+          if (dup.scores[q] === undefined && item.scores[q] !== undefined) {
+            dup.scores[q] = item.scores[q]
+          }
+        }
+      } else {
+        section.items.push(item)
+        itemCount++
+      }
     }
 
     if (section.items.length > 0) sections.push(section)
