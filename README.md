@@ -5,10 +5,13 @@ it helps HQ and senior leaders understand where each manager stands, what
 they are working on, what they are capable of, what support they need, and
 what we collectively know about them.
 
-A separate CG platform application — own repo, own Vercel project
-(`cg-people-center`), own Supabase project (`cgops-people`) — standalone in
-V1, designed from day one to integrate with CGOPS (SSO, permissions,
-launcher, summary endpoints) when those services exist.
+A **native CGOPS Platform application** (ADR 0006, Phase A complete): own
+repo and Vercel project (`cg-people-center`), running against the **shared
+CGOPS Supabase project** with every database object under the
+`people_center_` prefix. Authentication, user profiles, platform
+permissions, and the launcher are owned by CGOPS — People Center is opened
+from the CGOPS launcher via a browser-side SSO handoff and owns its business
+logic, UI, and module data.
 
 ## Boundaries (the admission test)
 
@@ -111,12 +114,13 @@ from auth.users u
 left join public.people_center_user_profiles p on p.auth_user_id = u.id;
 ```
 
-- **`profile_id` is null** → the auth user predates the Phase 0 migrations,
-  so the signup trigger never fired. Apply migration
-  `20260702090000_backfill_user_profiles.sql` (creates missing rows), then
-  run the bootstrap upsert above.
-- **`role` is `viewer`** → the promotion ran before the profile row existed
-  and matched 0 rows. Run the bootstrap upsert above.
+- **CGOPS platform admins need no compat row**: `people_center_is_admin()`
+  (migration `20260703090000`) also grants admin when the CGOPS profile
+  (`public.user_profiles`) has `role = 'admin'`.
+- **`profile_id` is null and you are not a CGOPS platform admin** → run the
+  bootstrap upsert above (there is no signup trigger; rows are created
+  manually until Phase B).
+- **`role` is `viewer`** → run the bootstrap upsert above.
 
 Refresh the app after either fix.
 

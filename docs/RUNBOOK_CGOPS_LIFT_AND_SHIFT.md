@@ -443,3 +443,23 @@ Every B step is independently reversible without touching data:
   Center schema changes are new, prefixed migrations in the CGOPS project's
   own lineage (Phase B's function swaps should be committed as the first
   one).
+
+## Lessons learned (migration day, 2026-07-03 — permanent guidance)
+
+1. **Never use `/rest/v1/` as `VITE_SUPABASE_URL`.** The value must be the
+   bare project URL (`https://<project-ref>.supabase.co`). Appending
+   `/rest/v1/` silently breaks Supabase Auth — this was the final
+   authentication issue, not SSO.
+2. **Vite requires redeployment after environment variable changes** —
+   env values are baked into the bundle at build time.
+3. **Production environment variables must be updated separately from
+   Preview** (Vercel scopes them independently).
+4. **The hash-based SSO receiver must execute before any hash router**
+   touches `location.hash`.
+5. **Launcher URLs must never include a trailing `#` or `/#/`** — either
+   corrupts the SSO fragment.
+6. **Treat authentication and authorization separately** — auth cut over on
+   day one; authorization stayed on the Phase A compatibility bridge.
+7. **Phase A uses compatibility bridges instead of redesigning security** —
+   one function body (`people_center_is_admin()`) bridged CGOPS platform
+   admins into 40 RLS policies with zero policy edits.

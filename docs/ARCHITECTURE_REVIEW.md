@@ -4,6 +4,12 @@
 > and `CGOPS_FOUNDATIONS.md` (rev. 1). Written before any code or migrations
 > exist in this repository. Once approved, this review plus the two source
 > documents form the architectural contract for `cg_people_center`.
+>
+> **Supersession note (2026-07-03):** the separate-Supabase-project premise
+> in §6–§8 (own project `cgops-people`, local Supabase Auth) is superseded by
+> **ADR 0006** — People Center now runs natively in the shared CGOPS Platform
+> Supabase project (`people_center_*` prefix) with CGOPS-owned auth via the
+> launcher SSO handoff. Everything else in this review stands.
 > **Verdict up front:** the architecture is sound, consistent with the CGOPS
 > platform philosophy, and buildable as specified. The issues below are
 > clarifications and trims, not redesigns.

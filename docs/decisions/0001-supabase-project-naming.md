@@ -1,6 +1,9 @@
 # ADR 0001 — Supabase project is `cgops-people`, not `cgops-identity`
 
-- **Status:** Accepted (2026-07-01)
+- **Status:** ~~Accepted (2026-07-01)~~ **Superseded by ADR 0006
+  (2026-07-03):** People Center migrated into the shared CGOPS Platform
+  Supabase project as `people_center_*` tables; `cgops-people` is
+  rollback-only until decommissioned.
 - **Contract refs:** ARCHITECTURE_REVIEW.md D1; CGOPS_FOUNDATIONS.md §6, §8
 
 ## Context
