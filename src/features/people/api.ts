@@ -99,6 +99,28 @@ export async function fetchRestrictedNotes(personId: string): Promise<Note[]> {
   return (data as Note[]) ?? []
 }
 
+export interface TimelineEvent {
+  id: string
+  event_type: string
+  entity_type: string | null
+  context: Record<string, unknown>
+  created_at: string
+}
+
+/** Per-person leadership timeline — a projection of people_center_events
+ * (pointers only). RLS scopes it to admins/executives and strict ancestors;
+ * others simply receive an empty stream. */
+export async function fetchTimeline(personId: string): Promise<TimelineEvent[]> {
+  const { data, error } = await supabase
+    .from('people_center_events')
+    .select('id, event_type, entity_type, context, created_at')
+    .eq('person_id', personId)
+    .order('created_at', { ascending: false })
+    .limit(30)
+  if (error) throw error
+  return (data as TimelineEvent[]) ?? []
+}
+
 export interface NewNote {
   personId: string
   personName: string

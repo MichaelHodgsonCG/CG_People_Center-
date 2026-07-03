@@ -23,6 +23,7 @@ export type Resource =
   | 'admin_area'
   | 'directory'
   | 'org_chart'
+  | 'bench' // succession + bench/risk dashboard (executive altitude)
   | 'data_sources'
   | 'person' // profile editing, assignments, review-flag clearing
   | 'notes' // leadership/development/relationship capture
@@ -66,6 +67,8 @@ export function can(
     case 'relationship_notes':
     case 'restricted_notes':
       return action === 'view' && user.role === 'executive'
+    case 'bench':
+      return user.role === 'executive'
     default:
       return false
   }

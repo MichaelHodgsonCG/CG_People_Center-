@@ -4,6 +4,7 @@ import { RedirectToCgops } from './features/auth/RedirectToCgops'
 import { AppShell, type View } from './components/AppShell'
 import { DirectoryView } from './features/directory/DirectoryView'
 import { OrgChartView } from './features/org/OrgChartView'
+import { BenchView } from './features/bench/BenchView'
 import { can, toPermissionUser } from './permissions'
 
 // Lazy: the sync pipeline (and its xlsx parser) only loads for admins who
@@ -34,10 +35,10 @@ export default function App() {
   if (!session) return <RedirectToCgops />
 
   const user = profile ? toPermissionUser(profile) : null
-  const effectiveView: View =
-    view === 'data_sources' && !can(user, 'view', 'data_sources')
-      ? 'directory'
-      : view
+  const guarded =
+    (view === 'data_sources' && !can(user, 'view', 'data_sources')) ||
+    (view === 'bench' && !can(user, 'view', 'bench'))
+  const effectiveView: View = guarded ? 'directory' : view
 
   return (
     <AppShell
@@ -53,6 +54,8 @@ export default function App() {
         </Suspense>
       ) : effectiveView === 'org_chart' ? (
         <OrgChartView session={session} profile={profile} />
+      ) : effectiveView === 'bench' ? (
+        <BenchView session={session} profile={profile} />
       ) : (
         <DirectoryView session={session} profile={profile} isAdmin={user?.role === 'admin'} />
       )}

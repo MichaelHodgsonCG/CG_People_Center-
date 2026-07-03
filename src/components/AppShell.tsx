@@ -8,6 +8,7 @@ import type { Session } from '@supabase/supabase-js'
 import {
   ChevronsLeft,
   ChevronsRight,
+  BarChart3,
   Database,
   Lightbulb,
   Network,
@@ -22,11 +23,12 @@ import type { UserProfile } from '../types'
 import { SuggestionsPanel } from '../features/suggestions/SuggestionsPanel'
 import monogram from '../assets/CG Logo Small.png'
 
-export type View = 'directory' | 'org_chart' | 'data_sources'
+export type View = 'directory' | 'org_chart' | 'bench' | 'data_sources'
 
 const NAV: { view: View; label: string; resource: Resource; icon: LucideIcon }[] = [
   { view: 'directory', label: 'Directory', resource: 'directory', icon: Users },
   { view: 'org_chart', label: 'Org Chart', resource: 'org_chart', icon: Network },
+  { view: 'bench', label: 'Bench & Risk', resource: 'bench', icon: BarChart3 },
   { view: 'data_sources', label: 'Data Sources', resource: 'data_sources', icon: Database },
 ]
 
@@ -132,7 +134,7 @@ export function AppShell({
       {suggestionsOpen && (
         <SuggestionsPanel
           profile={profile}
-          pageContext={view === 'data_sources' ? 'Data Sources' : view === 'org_chart' ? 'Org Chart' : 'Directory'}
+          pageContext={view === 'data_sources' ? 'Data Sources' : view === 'org_chart' ? 'Org Chart' : view === 'bench' ? 'Bench & Risk' : 'Directory'}
           onClose={() => setSuggestionsOpen(false)}
         />
       )}
