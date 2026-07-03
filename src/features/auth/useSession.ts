@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../../lib/supabase'
+import { consumeCgopsSsoHandoff } from './cgopsSso'
 import type { UserProfile } from '../../types'
 
 // Session + app profile in one hook. The app's role detection reads
@@ -20,14 +21,23 @@ export function useSession() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      setLoading(false)
-    })
+    let cancelled = false
+    // Consume a CGOPS SSO handoff fragment (if present) BEFORE reading the
+    // session, so first render after a CGOPS launch is already signed in.
+    consumeCgopsSsoHandoff()
+      .then(() => supabase.auth.getSession())
+      .then(({ data }) => {
+        if (cancelled) return
+        setSession(data.session)
+        setLoading(false)
+      })
     const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
       setSession(next)
     })
-    return () => sub.subscription.unsubscribe()
+    return () => {
+      cancelled = true
+      sub.subscription.unsubscribe()
+    }
   }, [])
 
   useEffect(() => {

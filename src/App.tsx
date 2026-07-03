@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState } from 'react'
 import { useSession } from './features/auth/useSession'
-import { LoginScreen } from './features/auth/LoginScreen'
+import { RedirectToCgops } from './features/auth/RedirectToCgops'
 import { AppShell, type View } from './components/AppShell'
 import { DirectoryView } from './features/directory/DirectoryView'
 import { can, toPermissionUser } from './permissions'
@@ -28,7 +28,9 @@ export default function App() {
     )
   }
 
-  if (!session) return <LoginScreen />
+  // Phase A: no standalone login — unauthenticated visits (and sign-outs)
+  // go to CGOPS, which relaunches with the SSO handoff fragment.
+  if (!session) return <RedirectToCgops />
 
   const user = profile ? toPermissionUser(profile) : null
   const effectiveView: View =

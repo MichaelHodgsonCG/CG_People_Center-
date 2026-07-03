@@ -46,10 +46,21 @@ code flows through `src/permissions` (`can(user, action, resource)`).
 ## Setup
 
 ```bash
-cp .env.example .env   # fill in VITE_SUPABASE_ANON_KEY
+cp .env.example .env   # fill in the CGOPS Supabase URL, anon key, and VITE_CGOPS_URL
 npm install
 npm run dev
 ```
+
+### Sign-in (Phase A — CGOPS SSO handoff)
+
+People Center has **no standalone login**. CGOPS is the front door: it
+launches People Center with session tokens in a URL fragment
+(`#cgops_sso=1&access_token=…&refresh_token=…`), which
+`src/features/auth/cgopsSso.ts` consumes via `setSession()` and immediately
+strips from the address bar. Unauthenticated visits (and sign-outs) redirect
+to `VITE_CGOPS_URL`. Both apps share the CGOPS Supabase project, so the
+tokens are valid here as-is. There is no People Center signup path and no
+auth triggers — users exist only in CGOPS Auth.
 
 ### Database
 
@@ -69,12 +80,12 @@ filename order matters, and the pre-rename migrations are no longer
 individually re-runnable on an already-renamed database (the guarded rename
 migration is).
 
-### Bootstrap the first admin
+### Bootstrap the admin compatibility row
 
-Create the first user (Supabase dashboard → Authentication → Add user), then
-promote by email in the SQL editor. This upsert works whether or not the
-profile row already exists (a plain UPDATE silently matches 0 rows if the
-auth user predates the migrations):
+Identity lives in CGOPS Auth. Until Phase B swaps the permission authority to
+CGOPS profiles (see `docs/RUNBOOK_CGOPS_LIFT_AND_SHIFT.md`), admin access is
+granted by a temporary `people_center_user_profiles` row keyed to the CGOPS
+auth user — run in the CGOPS SQL editor:
 
 ```sql
 insert into public.people_center_user_profiles (auth_user_id, email, role, updated_by_name)
