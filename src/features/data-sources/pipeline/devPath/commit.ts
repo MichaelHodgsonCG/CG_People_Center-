@@ -46,6 +46,7 @@ export async function syncTemplates(
   supabase: SupabaseClient,
   sheets: ParsedPathSheet[],
   actorName: string,
+  onProgress?: (message: string) => void,
 ): Promise<TemplateSyncSummary[]> {
   const { data: positions, error: posErr } = await supabase
     .from('people_center_positions')
@@ -56,7 +57,9 @@ export async function syncTemplates(
   )
 
   const results: TemplateSyncSummary[] = []
-  for (const sheet of sheets) {
+  for (let sheetIdx = 0; sheetIdx < sheets.length; sheetIdx++) {
+    const sheet = sheets[sheetIdx]
+    onProgress?.(`Syncing ${sheet.tabName} (${sheetIdx + 1}/${sheets.length})…`)
     const roleKey = normalizeText(sheet.tabName).replace(/ /g, '_')
     // Name-tolerant position link ('FOH Supervisor' path → 'Supervisor').
     const positionId =
@@ -100,89 +103,107 @@ export async function syncTemplates(
       itemsUnchanged: 0,
     }
 
-    const seenSectionIds = new Set<string>()
-    const seenItemIds = new Set<string>()
-
-    for (let si = 0; si < sheet.sections.length; si++) {
-      const parsed = sheet.sections[si]
-      let db = sectionByTitle.get(normalizeText(parsed.title))
-      if (!db) {
-        const { data: created, error } = await supabase
-          .from('people_center_dev_path_sections')
-          .insert({
+    // Missing sections: ONE bulk insert (fetched back by title to map ids).
+    const missingSections = sheet.sections
+      .map((parsed, si) => ({ parsed, si }))
+      .filter(({ parsed }) => !sectionByTitle.has(normalizeText(parsed.title)))
+    if (missingSections.length > 0) {
+      const { data: created, error } = await supabase
+        .from('people_center_dev_path_sections')
+        .insert(
+          missingSections.map(({ parsed, si }) => ({
             template_id: templateId,
             title: parsed.title,
             phase: parsed.phase,
             sort_order: si,
-          })
-          .select('id, title, phase, sort_order, active')
-          .single()
-        if (error) throw error
-        db = created as DbSection
-        sectionByTitle.set(normalizeText(parsed.title), db)
-        summary.sectionsCreated++
-      } else if (db.phase !== parsed.phase || db.sort_order !== si || !db.active) {
+          })),
+        )
+        .select('id, title, phase, sort_order, active')
+      if (error) throw error
+      for (const s of (created ?? []) as DbSection[]) {
+        sectionByTitle.set(normalizeText(s.title), s)
+      }
+      summary.sectionsCreated = missingSections.length
+    }
+
+    // Drifted existing sections (rare: retitle-adjacent phase/order changes).
+    const seenSectionIds = new Set<string>()
+    for (let si = 0; si < sheet.sections.length; si++) {
+      const parsed = sheet.sections[si]
+      const db = sectionByTitle.get(normalizeText(parsed.title))
+      if (!db) continue // impossible after the bulk insert; defensive
+      seenSectionIds.add(db.id)
+      const isNew = missingSections.some(({ parsed: p }) => p === parsed)
+      if (!isNew && (db.phase !== parsed.phase || db.sort_order !== si || !db.active)) {
         const { error } = await supabase
           .from('people_center_dev_path_sections')
           .update({ phase: parsed.phase, sort_order: si, active: true })
           .eq('id', db.id)
         if (error) throw error
       }
-      seenSectionIds.add(db.id)
+    }
 
-      const { data: dbItems, error: iErr } = await supabase
-        .from('people_center_dev_path_items')
-        .select('id, section_id, prompt, sort_order, active')
-        .eq('section_id', db.id)
-      if (iErr) throw iErr
-      const itemByPrompt = new Map<string, DbItem>(
-        ((dbItems ?? []) as DbItem[]).map((i) => [normalizeText(i.prompt), i]),
-      )
+    // ALL of this template's items in ONE query, matched in memory.
+    // Includes sections missing from the new master, so their items are
+    // deactivated below along with the section itself.
+    const sectionIds = [
+      ...new Set([
+        ...seenSectionIds,
+        ...((dbSections ?? []) as DbSection[]).map((s) => s.id),
+      ]),
+    ]
+    const { data: dbItems, error: iErr } = await supabase
+      .from('people_center_dev_path_items')
+      .select('id, section_id, prompt, sort_order, active')
+      .in('section_id', sectionIds)
+    if (iErr) throw iErr
+    const itemByKey = new Map<string, DbItem>(
+      ((dbItems ?? []) as DbItem[]).map((i) => [
+        `${i.section_id}|${normalizeText(i.prompt)}`,
+        i,
+      ]),
+    )
 
+    const newItems: { section_id: string; prompt: string; sort_order: number }[] = []
+    const reactivateIds: string[] = []
+    const seenItemIds = new Set<string>()
+    for (const parsed of sheet.sections) {
+      const db = sectionByTitle.get(normalizeText(parsed.title))
+      if (!db) continue
       for (let ii = 0; ii < parsed.items.length; ii++) {
         const prompt = parsed.items[ii].prompt
-        const existing = itemByPrompt.get(normalizeText(prompt))
+        const existing = itemByKey.get(`${db.id}|${normalizeText(prompt)}`)
         if (!existing) {
-          const { data: created, error } = await supabase
-            .from('people_center_dev_path_items')
-            .insert({ section_id: db.id, prompt, sort_order: ii })
-            .select('id')
-            .single()
-          if (error) throw error
-          seenItemIds.add(created.id as string)
-          summary.itemsCreated++
+          newItems.push({ section_id: db.id, prompt, sort_order: ii })
         } else {
           seenItemIds.add(existing.id)
-          if (!existing.active) {
-            const { error } = await supabase
-              .from('people_center_dev_path_items')
-              .update({ active: true, deactivated_at: null, sort_order: ii })
-              .eq('id', existing.id)
-            if (error) throw error
-            summary.itemsReactivated++
-          } else {
-            if (existing.sort_order !== ii) {
-              const { error } = await supabase
-                .from('people_center_dev_path_items')
-                .update({ sort_order: ii })
-                .eq('id', existing.id)
-              if (error) throw error
-            }
-            summary.itemsUnchanged++
-          }
+          if (!existing.active) reactivateIds.push(existing.id)
+          else summary.itemsUnchanged++
         }
       }
     }
 
+    // New questions: ONE bulk insert. Reactivations: ONE bulk update.
+    if (newItems.length > 0) {
+      const { error } = await supabase
+        .from('people_center_dev_path_items')
+        .insert(newItems)
+      if (error) throw error
+      summary.itemsCreated = newItems.length
+    }
+    if (reactivateIds.length > 0) {
+      const { error } = await supabase
+        .from('people_center_dev_path_items')
+        .update({ active: true, deactivated_at: null })
+        .in('id', reactivateIds)
+      if (error) throw error
+      summary.itemsReactivated = reactivateIds.length
+    }
+
     // Anything the new master no longer contains: deactivate, keep history.
-    const { data: allItems, error: aiErr } = await supabase
-      .from('people_center_dev_path_items')
-      .select('id, active, section:people_center_dev_path_sections!inner(template_id)')
-      .eq('section.template_id', templateId)
-      .eq('active', true)
-    if (aiErr) throw aiErr
-    const toDeactivate = ((allItems ?? []) as { id: string }[]).filter(
-      (i) => !seenItemIds.has(i.id),
+    // (dbItems predates this run's inserts, so new items are never touched.)
+    const toDeactivate = ((dbItems ?? []) as DbItem[]).filter(
+      (i) => i.active && !seenItemIds.has(i.id),
     )
     if (toDeactivate.length > 0) {
       const { error } = await supabase
@@ -438,9 +459,13 @@ export async function commitAssessments(
     }
 
     if (scoreRows.length > 0) {
+      // Dedupe by (item, quarter): identical wording in two places maps to
+      // one item, and one upsert payload must not hit a row twice.
+      const byKey = new Map<string, (typeof scoreRows)[number]>()
+      for (const row of scoreRows) byKey.set(`${row.item_id}|${row.quarter}`, row)
       const { error } = await supabase
         .from('people_center_dev_scores')
-        .upsert(scoreRows, { onConflict: 'assessment_id,item_id,quarter' })
+        .upsert([...byKey.values()], { onConflict: 'assessment_id,item_id,quarter' })
       if (error) throw error
     }
     if (noteRows.length > 0) {

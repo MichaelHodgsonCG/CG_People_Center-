@@ -56,6 +56,7 @@ export function DevPathsPanel({ profile }: { profile: UserProfile | null }) {
   const [mode, setMode] = useState<Mode>('assessment')
   const [periodLabel, setPeriodLabel] = useState('F26')
   const [stage, setStage] = useState<Stage>({ kind: 'idle' })
+  const [progress, setProgress] = useState<string | null>(null)
   const actorName = profile?.display_name ?? profile?.email ?? 'unknown'
 
   async function handleFile(file: File) {
@@ -94,11 +95,19 @@ export function DevPathsPanel({ profile }: { profile: UserProfile | null }) {
 
   async function handleTemplateCommit(parsed: ParsedDevPathWorkbook) {
     setStage({ kind: 'committing' })
+    setProgress(null)
     try {
-      const results = await syncTemplates(supabase, parsed.pathSheets, actorName)
+      const results = await syncTemplates(
+        supabase,
+        parsed.pathSheets,
+        actorName,
+        setProgress,
+      )
       setStage({ kind: 'template-done', results })
     } catch (e) {
       setStage({ kind: 'error', message: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setProgress(null)
     }
   }
 
@@ -187,7 +196,7 @@ export function DevPathsPanel({ profile }: { profile: UserProfile | null }) {
 
       {(stage.kind === 'parsing' || stage.kind === 'committing') && (
         <p className="p-6 text-sm text-charcoal/50">
-          {stage.kind === 'parsing' ? 'Reading workbook…' : 'Writing…'}
+          {stage.kind === 'parsing' ? 'Reading workbook…' : progress ?? 'Writing…'}
         </p>
       )}
 
