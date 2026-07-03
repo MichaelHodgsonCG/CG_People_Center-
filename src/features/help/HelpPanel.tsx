@@ -50,14 +50,16 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
 
           <Section title="Notes — and who can see them">
             Three kinds: <b>Leadership</b> (observations), <b>Development</b>{' '}
-            (growth and coaching), and <b>Relationship</b> (personal context
+            (growth and coaching), and <b>Fun Facts</b> (personal context
             someone shared willingly — family, interests, circumstances).
             Visibility follows the reporting chain: <b>you can only read
             notes about people below you — never peers, never anyone above
-            you, never yourself.</b> Relationship notes are HQ-only and every
-            view of them is recorded in the audit log. Restricted notes are
-            tighter still: author and executives only, loaded on request.
-            Write notes that are observable, specific, and developmental.
+            you, never yourself.</b> Fun facts save into their own Fun Facts
+            section on the cheat sheet; they're HQ-only and every HQ view of
+            them is recorded in the audit log (you always see the ones you
+            wrote). Restricted notes are tighter still: author and executives
+            only, in the Restricted section at the bottom. Write notes that
+            are observable, specific, and developmental.
           </Section>
 
           <Section title="Org Chart">
@@ -94,8 +96,8 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
           </Section>
 
           <Section title="Privacy, in one paragraph">
-            Sensitive reads are audited, relationship context is voluntary
-            and purgeable on request, departed people's notes are archived
+            Sensitive reads are audited, fun facts are voluntary and
+            purgeable on request, departed people's notes are archived
             admin-only with a five-year hold, and every rule above is
             enforced in the database — not just the screen.
           </Section>
