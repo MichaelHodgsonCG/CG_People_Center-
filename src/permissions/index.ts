@@ -1,10 +1,13 @@
 // THE permissions module — every access check in app code flows through
 // can(); no ad-hoc role checks in components (ARCHITECTURE_REVIEW.md §8.5,
 // CGOPS_FOUNDATIONS.md §3). RLS remains the enforcement layer; this module
-// exists so the UI and the database agree on one vocabulary, and so that
-// when CGOPS becomes the permission authority, people_center_user_profiles/
-// people_center_user_scopes become a synced projection of CGOPS grants and
-// this signature is unchanged.
+// exists so the UI and the database agree on one vocabulary.
+//
+// Authority decision (2026-07-02, supersedes the projection plan): CGOPS
+// profiles are the source of truth for identity, role, and app access.
+// people_center_user_profiles is only a temporary compatibility layer until
+// Phase B of docs/RUNBOOK_CGOPS_LIFT_AND_SHIFT.md maps CGOPS roles into
+// PermissionUser here — this signature is the seam and stays unchanged.
 //
 // Phase 0 truth table is deliberately tiny: admins can do everything; any
 // authenticated user may view the shell. The five-role vocabulary is defined

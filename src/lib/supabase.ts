@@ -11,4 +11,9 @@ if (!url || !anonKey) {
   )
 }
 
-export const supabase = createClient(url, anonKey)
+// detectSessionInUrl is off: the ONLY way tokens arrive via URL is the CGOPS
+// SSO handoff fragment, consumed deterministically by cgopsSso.ts — two
+// parsers racing over the same fragment is how sessions get dropped.
+export const supabase = createClient(url, anonKey, {
+  auth: { detectSessionInUrl: false },
+})
