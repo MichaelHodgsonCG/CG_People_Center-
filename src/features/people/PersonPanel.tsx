@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import {
   AlertTriangle,
+  CheckCircle2,
   Eye,
   Heart,
   History,
@@ -70,6 +71,7 @@ export function PersonPanel({ personId, session, profile, onClose, onChanged }: 
   const actor = actorFrom(profile, session)
   const isAdmin = user?.role === 'admin'
   const canEdit = can(user, 'update', 'person')
+  const canWriteNotes = isAdmin || can(user, 'create', 'notes')
 
   const [person, setPerson] = useState<PersonDetail | null>(null)
   const [notes, setNotes] = useState<Note[]>([])
@@ -78,6 +80,7 @@ export function PersonPanel({ personId, session, profile, onClose, onChanged }: 
   const [managerName, setManagerName] = useState<string | null>(null)
   const [timeline, setTimeline] = useState<TimelineEvent[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [savedNotice, setSavedNotice] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
 
   const reload = useCallback(() => {
@@ -93,14 +96,12 @@ export function PersonPanel({ personId, session, profile, onClose, onChanged }: 
       .catch((e: Error) => setError(e.message))
     fetchNotes(personId).then(setNotes).catch((e: Error) => setError(e.message))
     fetchTimeline(personId).then(setTimeline).catch(() => setTimeline([]))
-    // The relationship half loads only for roles the database will serve —
-    // for them, this call writes the panel-view audit row (D8, by design).
-    if (can(user, 'view', 'relationship_notes')) {
-      fetchRelationshipNotes(personId)
-        .then(setRelationshipNotes)
-        .catch((e: Error) => setError(e.message))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Fun Facts load for everyone: privileged roles get the full HQ panel
+    // (this call writes the panel-view audit row — D8, by design), everyone
+    // else gets only the fun facts they authored themselves, un-audited.
+    fetchRelationshipNotes(personId)
+      .then(setRelationshipNotes)
+      .catch((e: Error) => setError(e.message))
   }, [personId])
 
   useEffect(() => {
@@ -110,6 +111,7 @@ export function PersonPanel({ personId, session, profile, onClose, onChanged }: 
     setRestrictedNotes(null)
     setEditing(false)
     setError(null)
+    setSavedNotice(null)
     reload()
   }, [personId, reload])
 
@@ -243,7 +245,12 @@ export function PersonPanel({ personId, session, profile, onClose, onChanged }: 
               <h3 className="mb-3 text-xs font-medium uppercase tracking-wide text-charcoal/50">
                 Leadership & development notes
               </h3>
-              {can(user, 'create', 'notes') || isAdmin ? (
+              {savedNotice && (
+                <p className="mb-3 flex items-center gap-1.5 rounded-md bg-success/10 px-3 py-2 text-sm text-success">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" /> {savedNotice}
+                </p>
+              )}
+              {canWriteNotes ? (
                 <NoteForm
                   onSubmit={async (n) => {
                     await addNote(actor, {
@@ -251,29 +258,51 @@ export function PersonPanel({ personId, session, profile, onClose, onChanged }: 
                       personId: person.id,
                       personName: person.full_name,
                     })
+                    // Tell the author exactly where their note now lives —
+                    // fun facts and restricted notes render in their own
+                    // sections below, not in this list.
+                    if (n.visibility === 'restricted') {
+                      setSavedNotice(
+                        'Note saved — find it in the Restricted section below.',
+                      )
+                      fetchRestrictedNotes(person.id)
+                        .then(setRestrictedNotes)
+                        .catch((e: Error) => setError(e.message))
+                    } else if (n.category === 'relationship') {
+                      setSavedNotice(
+                        'Fun fact saved — find it in the Fun Facts section below.',
+                      )
+                    } else {
+                      setSavedNotice('Note saved.')
+                    }
                     reload()
                   }}
                 />
               ) : null}
               <NoteList
-                notes={notes.filter((n) => n.visibility !== 'restricted')}
+                notes={notes.filter(
+                  (n) =>
+                    n.visibility !== 'restricted' && n.category !== 'relationship',
+                )}
                 empty="No notes visible at your level yet."
               />
             </section>
 
-            {/* Relationship half — audited */}
+            {/* Fun Facts (relationship category) — audited for HQ readers */}
             {relationshipNotes !== null && (
               <section className="rounded-xl border border-surface-line bg-surface-muted/40 p-4">
                 <h3 className="mb-1 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-charcoal/50">
-                  <Heart className="h-3.5 w-3.5" /> Relationship (shared with us)
+                  <Heart className="h-3.5 w-3.5" /> Fun Facts (shared with us)
                 </h3>
                 <p className="mb-3 flex items-center gap-1 text-[11px] text-charcoal/40">
-                  <Eye className="h-3 w-3" /> Viewing this panel is recorded in the
-                  audit log
+                  <Eye className="h-3 w-3" />
+                  {can(user, 'view', 'relationship_notes') || isAdmin
+                    ? 'Viewing this panel is recorded in the audit log'
+                    : 'You see the fun facts you wrote; HQ sees them all (audited)'}
                 </p>
                 <NoteList
                   notes={relationshipNotes}
-                  empty="Nothing shared yet — relationship context is voluntary."
+                  empty="Nothing shared yet — fun facts are voluntary."
                 />
               </section>
             )}
@@ -297,8 +326,12 @@ export function PersonPanel({ personId, session, profile, onClose, onChanged }: 
               </section>
             )}
 
-            {/* Restricted — audited, behind an explicit action */}
-            {(isAdmin || can(user, 'view', 'restricted_notes')) && (
+            {/* Restricted — audited, behind an explicit action. Note authors
+                also get this section: the database serves them only the
+                restricted notes they wrote themselves (un-audited). */}
+            {(isAdmin ||
+              can(user, 'view', 'restricted_notes') ||
+              can(user, 'create', 'notes')) && (
               <section className="rounded-xl border border-surface-line p-4">
                 <h3 className="mb-3 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-charcoal/50">
                   <Lock className="h-3.5 w-3.5" /> Restricted
@@ -312,7 +345,9 @@ export function PersonPanel({ personId, session, profile, onClose, onChanged }: 
                     }
                     className="rounded-md border border-surface-line px-3 py-1.5 text-sm hover:bg-surface-muted"
                   >
-                    Load restricted notes (audited)
+                    {isAdmin || can(user, 'view', 'restricted_notes')
+                      ? 'Load restricted notes (audited)'
+                      : 'Show restricted notes I wrote'}
                   </button>
                 ) : (
                   <NoteList notes={restrictedNotes} empty="No restricted notes." />
@@ -345,6 +380,14 @@ function FactBlock({ label, value }: { label: string; value: string | null }) {
   )
 }
 
+// UI label for the note category — the database keeps 'relationship' as the
+// stored value; leadership renamed it "Fun Facts" for the screen (2026-07-03).
+const CATEGORY_LABELS: Record<NoteCategory, string> = {
+  leadership: 'leadership',
+  development: 'development',
+  relationship: 'fun fact',
+}
+
 function NoteList({ notes, empty }: { notes: Note[]; empty: string }) {
   if (notes.length === 0) {
     return <p className="text-sm text-charcoal/50">{empty}</p>
@@ -355,7 +398,7 @@ function NoteList({ notes, empty }: { notes: Note[]; empty: string }) {
         <li key={n.id} className="rounded-md border border-surface-line/70 bg-surface p-3">
           <p className="whitespace-pre-wrap text-sm">{n.body}</p>
           <p className="mt-1.5 text-xs text-charcoal/50">
-            {n.author_name} · {n.noted_on} · {n.category} ·{' '}
+            {n.author_name} · {n.noted_on} · {CATEGORY_LABELS[n.category] ?? n.category} ·{' '}
             <span className={n.visibility === 'restricted' ? 'text-warning' : ''}>
               {n.visibility}
             </span>
@@ -442,7 +485,7 @@ function NoteForm({
         >
           <option value="leadership">Leadership</option>
           <option value="development">Development</option>
-          <option value="relationship">Relationship</option>
+          <option value="relationship">Fun fact</option>
         </select>
         <select
           value={visibility}
@@ -467,7 +510,7 @@ function NoteForm({
         rows={3}
         placeholder={
           isRelationship
-            ? 'Personal context they shared with us — voluntary, never required…'
+            ? 'A fun fact they shared with us — family, interests, milestones — voluntary, never required…'
             : 'Observable, specific, developmental…'
         }
         className="w-full rounded-md border border-surface-line bg-surface px-3 py-2 text-sm focus:border-charcoal focus:outline-none"
@@ -481,8 +524,8 @@ function NoteForm({
             required
             className="mt-0.5"
           />
-          They shared this willingly (required — relationship notes are
-          voluntary by design and can be purged at their request)
+          They shared this willingly (required — fun facts are voluntary by
+          design and can be purged at their request)
         </label>
       )}
       {error && <p className="text-xs text-danger">{error}</p>}
@@ -604,12 +647,12 @@ function AdminEditor({
           onClick={() => {
             if (
               window.confirm(
-                `Purge ALL relationship notes about ${person.full_name}? This is the subject-request purge — irreversible and audited.`,
+                `Purge ALL fun facts about ${person.full_name}? This is the subject-request purge — irreversible and audited.`,
               )
             ) {
               purgeRelationshipNotes(person.id)
                 .then((n) => {
-                  window.alert(`${n} relationship note(s) purged (audited).`)
+                  window.alert(`${n} fun fact(s) purged (audited).`)
                   onSaved()
                 })
                 .catch((e: Error) => setError(e.message))
@@ -617,7 +660,7 @@ function AdminEditor({
           }}
           className="rounded-md border border-danger/40 px-2.5 py-1.5 text-xs font-medium text-danger hover:bg-danger/5"
         >
-          Purge relationship notes (subject request)
+          Purge fun facts (subject request)
         </button>
       </div>
       )}

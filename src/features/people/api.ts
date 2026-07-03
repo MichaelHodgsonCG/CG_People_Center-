@@ -1,7 +1,8 @@
 // Person detail + notes data access. Reads rely on RLS; the two sensitive
-// note reads go through the AUDITED definer functions (D8) — calling them IS
-// the audit event, so the panel calls them only for roles the database will
-// actually serve (the permissions module mirrors that truth table).
+// note reads go through the AUDITED definer functions (D8) — for privileged
+// (HQ) callers, calling them IS the audit event. Non-privileged callers get
+// only the rows they authored themselves, with no audit row written, so the
+// panel may call them for any role.
 
 import { supabase } from '../../lib/supabase'
 import { recordAudit, recordEvent, type Actor } from '../../lib/activity'
