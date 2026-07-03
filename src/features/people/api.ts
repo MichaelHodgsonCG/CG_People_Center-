@@ -36,6 +36,7 @@ export interface PersonDetail {
   risks: string | null
   data_quality_status: 'ok' | 'needs_review'
   data_quality_note: string | null
+  departed_on: string | null
   position_assignments: PersonAssignment[]
 }
 
@@ -46,7 +47,7 @@ export async function fetchPersonDetail(personId: string): Promise<PersonDetail>
       `id, full_name, preferred_name, email, phone, status, person_kind,
        hire_date, manager_person_id, mentor_person_id, home_city,
        relocation_interest, career_goals, strengths, risks,
-       data_quality_status, data_quality_note,
+       data_quality_status, data_quality_note, departed_on,
        position_assignments:people_center_position_assignments (
          id, is_primary, started_on, ended_on, position_id, location_id,
          positions:people_center_positions ( name ),
@@ -191,6 +192,16 @@ export async function clearReviewFlag(
     personName,
     'Cleared data-quality review flag',
   )
+}
+
+/** Subject-request purge of relationship notes (retention policy §5).
+ * Admin-only, enforced and audited inside the database function. */
+export async function purgeRelationshipNotes(personId: string): Promise<number> {
+  const { data, error } = await supabase.rpc('people_center_purge_relationship_notes', {
+    p_person_id: personId,
+  })
+  if (error) throw error
+  return (data as number) ?? 0
 }
 
 export interface ReferenceOption {
