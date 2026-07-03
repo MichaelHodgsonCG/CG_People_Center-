@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   Eye,
   Heart,
+  History,
   Loader2,
   Lock,
   Pencil,
@@ -29,6 +30,8 @@ import {
   clearReviewFlag,
   purgeRelationshipNotes,
   fetchNotes,
+  fetchTimeline,
+  type TimelineEvent,
   fetchPersonDetail,
   fetchPersonName,
   fetchReferenceOptions,
@@ -72,6 +75,7 @@ export function PersonPanel({ personId, session, profile, onClose, onChanged }: 
   const [relationshipNotes, setRelationshipNotes] = useState<Note[] | null>(null)
   const [restrictedNotes, setRestrictedNotes] = useState<Note[] | null>(null)
   const [managerName, setManagerName] = useState<string | null>(null)
+  const [timeline, setTimeline] = useState<TimelineEvent[]>([])
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
 
@@ -87,6 +91,7 @@ export function PersonPanel({ personId, session, profile, onClose, onChanged }: 
       })
       .catch((e: Error) => setError(e.message))
     fetchNotes(personId).then(setNotes).catch((e: Error) => setError(e.message))
+    fetchTimeline(personId).then(setTimeline).catch(() => setTimeline([]))
     // The relationship half loads only for roles the database will serve —
     // for them, this call writes the panel-view audit row (D8, by design).
     if (can(user, 'view', 'relationship_notes')) {
@@ -268,6 +273,25 @@ export function PersonPanel({ personId, session, profile, onClose, onChanged }: 
                   notes={relationshipNotes}
                   empty="Nothing shared yet — relationship context is voluntary."
                 />
+              </section>
+            )}
+
+            {/* Leadership timeline — projection of the events stream */}
+            {timeline.length > 0 && (
+              <section className="rounded-xl border border-surface-line p-4">
+                <h3 className="mb-3 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-charcoal/50">
+                  <History className="h-3.5 w-3.5" /> Timeline
+                </h3>
+                <ul className="space-y-1.5">
+                  {timeline.map((ev) => (
+                    <li key={ev.id} className="flex items-baseline gap-2 text-sm">
+                      <span className="shrink-0 text-xs tabular-nums text-charcoal/40">
+                        {new Date(ev.created_at).toLocaleDateString()}
+                      </span>
+                      <span>{describeEvent(ev)}</span>
+                    </li>
+                  ))}
+                </ul>
               </section>
             )}
 
@@ -743,4 +767,16 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       {children}
     </label>
   )
+}
+
+function describeEvent(ev: TimelineEvent): string {
+  const ctx = ev.context ?? {}
+  switch (ev.event_type) {
+    case 'position.changed':
+      return `Primary assignment set to ${String(ctx.position ?? '?')} at ${String(ctx.location ?? '?')}`
+    case 'note.added':
+      return `${String(ctx.category ?? 'leadership')} note added`
+    default:
+      return ev.event_type.replace(/[._]/g, ' ')
+  }
 }
