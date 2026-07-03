@@ -83,6 +83,26 @@ export function BenchView({ session, profile }: BenchViewProps) {
     () => locations.filter((l) => !l.hasGm || !l.hasChefDeCuisine),
     [locations],
   )
+
+  // Successors lined up per location, across all of its seats (GM seat
+  // first, then by rank), deduplicated for display beside the location.
+  const successorsByLocation = useMemo(() => {
+    const map = new Map<string, string[]>()
+    const ordered = [...slots].sort((a, b) =>
+      (a.positions?.name === 'General Manager' ? 0 : 1) -
+      (b.positions?.name === 'General Manager' ? 0 : 1),
+    )
+    for (const slot of ordered) {
+      if (!slot.location_id) continue
+      const names = map.get(slot.location_id) ?? []
+      for (const c of slot.candidates) {
+        const n = c.people?.full_name
+        if (n && !names.includes(n)) names.push(n)
+      }
+      map.set(slot.location_id, names)
+    }
+    return map
+  }, [slots])
   const thinSlots = useMemo(() => slots.filter((s) => s.candidates.length < 2), [slots])
 
   if (loading) return <p className="p-6 text-sm text-charcoal/50">Loading bench…</p>
@@ -175,6 +195,7 @@ export function BenchView({ session, profile }: BenchViewProps) {
                 <th className="px-3 py-2 font-medium">GM</th>
                 <th className="px-3 py-2 font-medium">Chef de Cuisine</th>
                 <th className="px-3 py-2 font-medium">Leaders</th>
+                <th className="px-3 py-2 font-medium">Successors lined up</th>
               </tr>
             </thead>
             <tbody>
@@ -184,6 +205,11 @@ export function BenchView({ session, profile }: BenchViewProps) {
                   <td className="px-3 py-2">{l.hasGm ? '✓' : <Missing />}</td>
                   <td className="px-3 py-2">{l.hasChefDeCuisine ? '✓' : <Missing />}</td>
                   <td className="px-3 py-2">{l.leaders}</td>
+                  <td className="px-3 py-2 text-charcoal/70">
+                    {(successorsByLocation.get(l.locationId) ?? []).join(', ') || (
+                      <span className="text-charcoal/35">—</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
