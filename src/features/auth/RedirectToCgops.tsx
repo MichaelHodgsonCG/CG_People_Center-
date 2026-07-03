@@ -3,7 +3,7 @@
 // which relaunches People Center with the SSO handoff fragment (cgopsSso.ts).
 
 import { useEffect } from 'react'
-import monogram from '../../assets/cg-monogram.svg'
+import monogram from '../../assets/CG Logo Small.png'
 
 const cgopsUrl = import.meta.env.VITE_CGOPS_URL
 

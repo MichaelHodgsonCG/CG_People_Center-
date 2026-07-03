@@ -17,7 +17,7 @@ import {
 import { signOut } from '../features/auth/useSession'
 import { can, toPermissionUser, type Resource } from '../permissions'
 import type { UserProfile } from '../types'
-import monogram from '../assets/cg-monogram.svg'
+import monogram from '../assets/CG Logo Small.png'
 
 export type View = 'directory' | 'data_sources'
 
