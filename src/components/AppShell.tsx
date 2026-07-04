@@ -15,6 +15,7 @@ import {
   Network,
   LogOut,
   ShieldAlert,
+  UserCog,
   Users,
   type LucideIcon,
 } from 'lucide-react'
@@ -25,13 +26,14 @@ import { SuggestionsPanel } from '../features/suggestions/SuggestionsPanel'
 import { HelpPanel } from '../features/help/HelpPanel'
 import monogram from '../assets/CG Logo Small.png'
 
-export type View = 'directory' | 'org_chart' | 'bench' | 'data_sources'
+export type View = 'directory' | 'org_chart' | 'bench' | 'data_sources' | 'users'
 
 const NAV: { view: View; label: string; resource: Resource; icon: LucideIcon }[] = [
   { view: 'directory', label: 'Directory', resource: 'directory', icon: Users },
   { view: 'org_chart', label: 'Org Chart', resource: 'org_chart', icon: Network },
   { view: 'bench', label: 'Bench & Risk', resource: 'bench', icon: BarChart3 },
   { view: 'data_sources', label: 'Data Sources', resource: 'data_sources', icon: Database },
+  { view: 'users', label: 'Users', resource: 'admin_area', icon: UserCog },
 ]
 
 const NAV_PREF_KEY = 'pc.nav.expanded'
@@ -147,7 +149,7 @@ export function AppShell({
       {suggestionsOpen && (
         <SuggestionsPanel
           profile={profile}
-          pageContext={view === 'data_sources' ? 'Data Sources' : view === 'org_chart' ? 'Org Chart' : view === 'bench' ? 'Bench & Risk' : 'Directory'}
+          pageContext={view === 'data_sources' ? 'Data Sources' : view === 'org_chart' ? 'Org Chart' : view === 'bench' ? 'Bench & Risk' : view === 'users' ? 'Users' : 'Directory'}
           onClose={() => setSuggestionsOpen(false)}
         />
       )}

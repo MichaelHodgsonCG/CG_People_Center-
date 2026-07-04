@@ -3,6 +3,7 @@ import { useSession } from './features/auth/useSession'
 import { RedirectToCgops } from './features/auth/RedirectToCgops'
 import { AppShell, type View } from './components/AppShell'
 import { SessionTimeoutManager } from './components/SessionTimeoutManager'
+import { UsersView } from './features/admin/UsersView'
 import { DirectoryView } from './features/directory/DirectoryView'
 import { OrgChartView } from './features/org/OrgChartView'
 import { BenchView } from './features/bench/BenchView'
@@ -38,7 +39,8 @@ export default function App() {
   const user = profile ? toPermissionUser(profile) : null
   const guarded =
     (view === 'data_sources' && !can(user, 'view', 'data_sources')) ||
-    (view === 'bench' && !can(user, 'view', 'bench'))
+    (view === 'bench' && !can(user, 'view', 'bench')) ||
+    (view === 'users' && !can(user, 'view', 'admin_area'))
   const effectiveView: View = guarded ? 'directory' : view
 
   return (
@@ -58,6 +60,8 @@ export default function App() {
         <Suspense fallback={<p className="p-6 text-sm text-charcoal/50">Loading…</p>}>
           <DataSourcesView profile={profile} />
         </Suspense>
+      ) : effectiveView === 'users' ? (
+        <UsersView session={session} profile={profile} />
       ) : effectiveView === 'org_chart' ? (
         <OrgChartView session={session} profile={profile} />
       ) : effectiveView === 'bench' ? (
