@@ -2,6 +2,7 @@ import { lazy, Suspense, useState } from 'react'
 import { useSession } from './features/auth/useSession'
 import { RedirectToCgops } from './features/auth/RedirectToCgops'
 import { AppShell, type View } from './components/AppShell'
+import { SessionTimeoutManager } from './components/SessionTimeoutManager'
 import { DirectoryView } from './features/directory/DirectoryView'
 import { OrgChartView } from './features/org/OrgChartView'
 import { BenchView } from './features/bench/BenchView'
@@ -41,6 +42,11 @@ export default function App() {
   const effectiveView: View = guarded ? 'directory' : view
 
   return (
+    <>
+      {/* Platform inactivity timeout (CGOPS authority — Platform Security.md):
+          mounted once for the signed-in app; on timeout it signs out and the
+          no-session branch above returns the user to the CGOPS login. */}
+      <SessionTimeoutManager />
     <AppShell
       session={session}
       profile={profile}
@@ -60,5 +66,6 @@ export default function App() {
         <DirectoryView session={session} profile={profile} isAdmin={user?.role === 'admin'} />
       )}
     </AppShell>
+    </>
   )
 }
