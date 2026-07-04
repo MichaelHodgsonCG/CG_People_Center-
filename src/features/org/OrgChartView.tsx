@@ -22,7 +22,7 @@ import './orgChart.css'
 interface OrgPerson {
   id: string
   full_name: string
-  status: 'active' | 'leave' | 'departed'
+  status: 'active' | 'leave' | 'departed' | 'incoming'
   person_kind: 'manager' | 'emerging_leader' | 'key_team_member'
   manager_person_id: string | null
   data_quality_status: 'ok' | 'needs_review'
@@ -318,6 +318,11 @@ function TreeRow({
             {primary?.positions?.name ?? ''}
             {primary?.locations?.name ? ` — ${primary.locations.name}` : ''}
           </span>
+          {p.status === 'incoming' && (
+            <span className="rounded-full bg-info/10 px-1.5 text-[10px] font-medium text-info">
+              incoming
+            </span>
+          )}
           {p.data_quality_status === 'needs_review' && (
             <AlertTriangle className="h-3 w-3 shrink-0 text-warning" />
           )}
@@ -382,6 +387,11 @@ function ChartNode({
           {primary?.positions?.name ?? '—'}
           {primary?.locations?.name ? ` · ${primary.locations.name}` : ''}
         </span>
+        {p.status === 'incoming' && (
+          <span className="rounded-full bg-info/10 px-1.5 text-[10px] font-medium text-info">
+            incoming
+          </span>
+        )}
         {hasChildren && (
           <button
             onClick={() => onToggle(p.id, depth)}

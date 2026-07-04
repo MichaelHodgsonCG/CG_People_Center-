@@ -218,6 +218,9 @@ export function PersonPanel({ personId, session, profile, onClose, onChanged }: 
               </h3>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                 <Fact label="Reporting line" value={managerName ?? '—'} />
+                {person.status === 'incoming' && (
+                  <Fact label="Starts" value={person.hire_date ?? 'TBD'} />
+                )}
                 <Fact
                   label="Relocation"
                   value={RELOCATION_LABELS[person.relocation_interest]}
@@ -803,6 +806,7 @@ function AdminEditor({
             onChange={(e) => set('status', e.target.value as ProfileEdits['status'])}
             className="w-full rounded-md border border-surface-line bg-surface px-2 py-1.5 text-sm"
           >
+            <option value="incoming">Incoming (not started yet)</option>
             <option value="active">Active</option>
             <option value="leave">Leave</option>
             <option value="departed">Departed</option>

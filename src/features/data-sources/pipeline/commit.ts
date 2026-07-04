@@ -56,19 +56,50 @@ export async function commitBatch(
     }
   }
 
+  // Incoming hires (status 'incoming', migration 20260707090000) were added
+  // ahead of Push. When the roster finally carries them, ACTIVATE the
+  // existing row instead of creating a duplicate — matched by normalized
+  // full name; ambiguous names (two incoming rows with the same name) are
+  // never auto-matched.
+  const { data: incomingPeople, error: incErr } = await supabase
+    .from('people_center_people')
+    .select('id, full_name')
+    .eq('status', 'incoming')
+  if (incErr) throw incErr
+  const normName = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  const incomingByName = new Map<string, string>()
+  for (const p of (incomingPeople ?? []) as { id: string; full_name: string }[]) {
+    const k = normName(p.full_name)
+    incomingByName.set(k, incomingByName.has(k) ? 'AMBIGUOUS' : p.id)
+  }
+  const activatedByRowNumber = new Map<number, string>()
+
   // Clean imports of already-known people are plain duplicates. Flagged
   // imports of already-known people become attach operations instead.
   const rows: ClassifiedRow[] = classified.map((c) => {
-    if (!existingByKey.has(c.row.sourceKey)) return c
-    if (c.disposition === 'imported') {
-      return {
-        ...c,
-        disposition: 'duplicate' as const,
-        reviewNote: 'Already in People Center from a prior sync — not modified',
+    if (existingByKey.has(c.row.sourceKey)) {
+      if (c.disposition === 'imported') {
+        return {
+          ...c,
+          disposition: 'duplicate' as const,
+          reviewNote: 'Already in People Center from a prior sync — not modified',
+        }
       }
+      if (c.disposition === 'imported_for_review') {
+        return { ...c, sameBatchDuplicate: true }
+      }
+      return c
     }
-    if (c.disposition === 'imported_for_review') {
-      return { ...c, sameBatchDuplicate: true }
+    if (c.disposition === 'imported' || c.disposition === 'imported_for_review') {
+      const match = incomingByName.get(normName(c.row.displayName))
+      if (match && match !== 'AMBIGUOUS' && !activatedByRowNumber.has(c.row.rowNumber)) {
+        activatedByRowNumber.set(c.row.rowNumber, match)
+        return {
+          ...c,
+          disposition: 'duplicate' as const,
+          reviewNote: 'Matched an incoming hire — existing record activated',
+        }
+      }
     }
     return c
   })
@@ -135,6 +166,20 @@ export async function commitBatch(
         .from('people_center_position_assignments')
         .insert(assignments)
       if (paErr) throw paErr
+    }
+  }
+
+  // Activate matched incoming hires: they've officially arrived. Their
+  // future-dated assignment stays as entered; the import row links to them.
+  if (activatedByRowNumber.size > 0) {
+    const ids = [...new Set(activatedByRowNumber.values())]
+    const { error: actErr } = await supabase
+      .from('people_center_people')
+      .update({ status: 'active', updated_by_name: input.importedByName })
+      .in('id', ids)
+    if (actErr) throw actErr
+    for (const [rowNumber, personId] of activatedByRowNumber) {
+      personIdByRowNumber.set(rowNumber, personId)
     }
   }
 

@@ -36,8 +36,12 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
 
           <Section title="Directory">
             Everyone leadership is invested in — managers, chefs, supervisors,
-            emerging leaders. Search by name, filter by location or kind.
-            Click any person to open their cheat sheet.
+            emerging leaders. Search by name, filter by position, location, or
+            kind. Click any person to open their cheat sheet. Admins and
+            executives can also <b>add an incoming hire</b> — someone signed
+            but not in Push yet — who appears immediately with their start
+            date and is activated automatically when a later roster sync
+            finds them.
           </Section>
 
           <Section title="The cheat sheet">

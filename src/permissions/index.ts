@@ -76,9 +76,10 @@ export function can(
     case 'bench':
       return user.role === 'executive'
     case 'person':
-      // HQ profile editing (migration 20260704160000): executives edit
-      // profiles and assignments; create/delete stay admin-only.
-      return action === 'update' && user.role === 'executive'
+      // HQ profile editing (20260704160000) + incoming-hire creation
+      // (20260707090000): executives edit profiles/assignments and add
+      // incoming hires; delete stays admin-only.
+      return (action === 'update' || action === 'create') && user.role === 'executive'
     default:
       return false
   }

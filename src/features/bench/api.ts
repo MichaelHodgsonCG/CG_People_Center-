@@ -197,7 +197,11 @@ export async function fetchCoverageGrid(): Promise<CoverageGrid> {
     if (!a.positions?.name) continue
     const key = `${a.location_id}|${a.positions.name}`
     const names = occupants[key] ?? []
-    if (!names.includes(a.people.full_name)) names.push(a.people.full_name)
+    const display =
+      a.people.status === 'incoming'
+        ? `${a.people.full_name} (incoming)`
+        : a.people.full_name
+    if (!names.includes(display)) names.push(display)
     occupants[key] = names
   }
 
@@ -278,10 +282,12 @@ export interface PersonOption {
 }
 
 export async function fetchPeopleOptions(): Promise<PersonOption[]> {
+  // Incoming hires included: they can hold a seat (incumbent) or sit on a
+  // bench before their start date.
   const { data, error } = await supabase
     .from('people_center_people')
     .select('id, full_name')
-    .eq('status', 'active')
+    .in('status', ['active', 'incoming'])
     .order('full_name')
   if (error) throw error
   return (data as PersonOption[]) ?? []

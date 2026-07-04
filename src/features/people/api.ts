@@ -25,7 +25,7 @@ export interface PersonDetail {
   preferred_name: string | null
   email: string | null
   phone: string | null
-  status: 'active' | 'leave' | 'departed'
+  status: 'active' | 'leave' | 'departed' | 'incoming'
   person_kind: 'manager' | 'emerging_leader' | 'key_team_member'
   hire_date: string | null
   manager_person_id: string | null
@@ -228,6 +228,66 @@ export async function clearReviewFlag(
     personName,
     'Cleared data-quality review flag',
   )
+}
+
+export interface IncomingHire {
+  fullName: string
+  email: string | null
+  positionId: string
+  positionName: string
+  locationId: string
+  locationName: string
+  startDate: string // ISO date — stored as hire_date, marks the roster
+  personKind: PersonDetail['person_kind']
+  managerPersonId: string | null
+}
+
+/** Record a signed-but-not-started hire (migration 20260707090000): a real
+ * directory row with status 'incoming', hire_date = start date, and a
+ * future-dated primary assignment. The Push roster sync later matches them
+ * by name and activates the row instead of duplicating it. */
+export async function addIncomingHire(actor: Actor, hire: IncomingHire): Promise<string> {
+  const { data, error } = await supabase
+    .from('people_center_people')
+    .insert({
+      full_name: hire.fullName,
+      email: hire.email,
+      status: 'incoming',
+      person_kind: hire.personKind,
+      hire_date: hire.startDate,
+      manager_person_id: hire.managerPersonId,
+      updated_by: actor.personId,
+      updated_by_name: actor.name,
+    })
+    .select('id')
+    .single()
+  if (error) {
+    if (error.code === '42501') throw new Error(PERMISSION_HINT)
+    throw error
+  }
+  const personId = data.id as string
+
+  const { error: paErr } = await supabase
+    .from('people_center_position_assignments')
+    .insert({
+      person_id: personId,
+      position_id: hire.positionId,
+      location_id: hire.locationId,
+      is_primary: true,
+      started_on: hire.startDate,
+      updated_by_name: actor.name,
+    })
+  if (paErr) throw paErr
+
+  await recordAudit(
+    actor,
+    'create',
+    'person',
+    personId,
+    hire.fullName,
+    `Added incoming hire — ${hire.positionName} at ${hire.locationName}, starts ${hire.startDate}`,
+  )
+  return personId
 }
 
 /** Subject-request purge of relationship notes (retention policy §5).

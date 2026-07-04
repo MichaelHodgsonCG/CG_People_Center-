@@ -320,9 +320,11 @@ function PipelineTable({
                       {names.length > 0 ? (
                         <>
                           {names.join(', ')}
-                          {incoming && !names.includes(incoming) && (
-                            <span className="text-info"> · {incoming} (incoming)</span>
-                          )}
+                          {incoming &&
+                            !names.includes(incoming) &&
+                            !names.includes(`${incoming} (incoming)`) && (
+                              <span className="text-info"> · {incoming} (incoming)</span>
+                            )}
                         </>
                       ) : incoming ? (
                         <span className="text-info">{incoming} (incoming)</span>

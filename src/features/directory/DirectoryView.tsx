@@ -7,18 +7,27 @@ import {
   ChevronDown,
   ChevronsUpDown,
   Search,
+  UserPlus,
   Users,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { actorFrom } from '../../lib/activity'
+import { can, toPermissionUser } from '../../permissions'
 import { PersonPanel } from '../people/PersonPanel'
+import {
+  addIncomingHire,
+  fetchReferenceOptions,
+  type ReferenceOption,
+} from '../people/api'
 import type { UserProfile } from '../../types'
 
 interface DirectoryPerson {
   id: string
   full_name: string
   preferred_name: string | null
-  status: 'active' | 'leave' | 'departed'
+  status: 'active' | 'leave' | 'departed' | 'incoming'
   person_kind: 'manager' | 'emerging_leader' | 'key_team_member'
+  hire_date: string | null
   data_quality_status: 'ok' | 'needs_review'
   data_quality_note: string | null
   position_assignments: {
@@ -76,6 +85,10 @@ interface DirectoryViewProps {
 }
 
 export function DirectoryView({ session, profile, isAdmin }: DirectoryViewProps) {
+  const user = profile ? toPermissionUser(profile) : null
+  const actor = actorFrom(profile, session)
+  const canAddHire = isAdmin || can(user, 'create', 'person')
+  const [addingHire, setAddingHire] = useState(false)
   const [people, setPeople] = useState<DirectoryPerson[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -91,7 +104,7 @@ export function DirectoryView({ session, profile, isAdmin }: DirectoryViewProps)
     supabase
       .from('people_center_people')
       .select(
-        `id, full_name, preferred_name, status, person_kind,
+        `id, full_name, preferred_name, status, person_kind, hire_date,
          data_quality_status, data_quality_note,
          position_assignments:people_center_position_assignments ( is_primary, ended_on,
            positions:people_center_positions ( name ),
@@ -223,14 +236,36 @@ export function DirectoryView({ session, profile, isAdmin }: DirectoryViewProps)
         </select>
       </div>
 
-      <p className="mb-3 text-xs uppercase tracking-wide text-charcoal/50">
-        {filtered.length} of {people.length} people
-        {needsReviewCount > 0 && (
-          <span className="ml-2 text-warning">
-            · {needsReviewCount} need{needsReviewCount === 1 ? 's' : ''} review
-          </span>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <p className="text-xs uppercase tracking-wide text-charcoal/50">
+          {filtered.length} of {people.length} people
+          {needsReviewCount > 0 && (
+            <span className="ml-2 text-warning">
+              · {needsReviewCount} need{needsReviewCount === 1 ? 's' : ''} review
+            </span>
+          )}
+        </p>
+        {canAddHire && (
+          <button
+            onClick={() => setAddingHire((v) => !v)}
+            className="flex items-center gap-1.5 rounded-md border border-surface-line px-2.5 py-1.5 text-xs font-medium hover:bg-surface-muted"
+          >
+            <UserPlus className="h-3.5 w-3.5" /> Add incoming hire
+          </button>
         )}
-      </p>
+      </div>
+
+      {addingHire && (
+        <IncomingHireForm
+          people={people}
+          onDone={() => {
+            setAddingHire(false)
+            load()
+          }}
+          onCancel={() => setAddingHire(false)}
+          actor={actor}
+        />
+      )}
 
       {people.length === 0 ? (
         <div className="rounded-xl border border-surface-line bg-surface p-10 text-center">
@@ -289,7 +324,15 @@ export function DirectoryView({ session, profile, isAdmin }: DirectoryViewProps)
                         {KIND_LABELS[p.person_kind]}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 capitalize">{p.status}</td>
+                    <td className="px-4 py-2.5">
+                      {p.status === 'incoming' ? (
+                        <span className="rounded-full bg-info/10 px-2 py-0.5 text-xs font-medium text-info">
+                          Incoming{p.hire_date ? ` · starts ${p.hire_date}` : ''}
+                        </span>
+                      ) : (
+                        <span className="capitalize">{p.status}</span>
+                      )}
+                    </td>
                   </tr>
                 )
               })}
@@ -345,6 +388,208 @@ function SortableHeader({
         )}
       </button>
     </th>
+  )
+}
+
+// Add a signed-but-not-started hire (migration 20260707090000): appears in
+// the roster immediately as "Incoming · starts <date>", becomes active when
+// the Push roster sync matches them (or an admin flips their status).
+function IncomingHireForm({
+  people,
+  actor,
+  onDone,
+  onCancel,
+}: {
+  people: DirectoryPerson[]
+  actor: ReturnType<typeof actorFrom>
+  onDone: () => void
+  onCancel: () => void
+}) {
+  const [options, setOptions] = useState<{
+    positions: ReferenceOption[]
+    locations: ReferenceOption[]
+  } | null>(null)
+  const [fullName, setFullName] = useState('')
+  const [email, setEmail] = useState('')
+  const [positionId, setPositionId] = useState('')
+  const [locationId, setLocationId] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [personKind, setPersonKind] = useState<DirectoryPerson['person_kind']>('manager')
+  const [managerId, setManagerId] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchReferenceOptions().then(setOptions).catch((e: Error) => setError(e.message))
+  }, [])
+
+  const duplicate = useMemo(() => {
+    const key = fullName.trim().toLowerCase()
+    return key.length > 0 && people.some((p) => p.full_name.trim().toLowerCase() === key)
+  }, [fullName, people])
+
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault()
+        setSaving(true)
+        setError(null)
+        try {
+          await addIncomingHire(actor, {
+            fullName: fullName.trim(),
+            email: email.trim() || null,
+            positionId,
+            positionName: options?.positions.find((p) => p.id === positionId)?.name ?? '?',
+            locationId,
+            locationName: options?.locations.find((l) => l.id === locationId)?.name ?? '?',
+            startDate,
+            personKind,
+            managerPersonId: managerId || null,
+          })
+          onDone()
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err))
+          setSaving(false)
+        }
+      }}
+      className="mb-4 space-y-3 rounded-xl border border-surface-line bg-surface p-4"
+    >
+      <p className="text-xs text-charcoal/60">
+        For people who've signed but aren't in Push yet. They appear in the
+        roster as <b>Incoming</b> with their start date; when a later Push
+        roster sync finds the same name, this record is activated instead of
+        duplicated.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block text-sm">
+          <span className="mb-1 block text-xs uppercase tracking-wide text-charcoal/50">
+            Full name *
+          </span>
+          <input
+            required
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            className="w-full rounded-md border border-surface-line px-2 py-1.5 text-sm"
+          />
+          {duplicate && (
+            <span className="mt-1 block text-xs text-warning">
+              Someone with this exact name is already in the directory.
+            </span>
+          )}
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block text-xs uppercase tracking-wide text-charcoal/50">
+            Start date *
+          </span>
+          <input
+            required
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="w-full rounded-md border border-surface-line px-2 py-1.5 text-sm"
+          />
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block text-xs uppercase tracking-wide text-charcoal/50">
+            Position *
+          </span>
+          <select
+            required
+            value={positionId}
+            onChange={(e) => setPositionId(e.target.value)}
+            className="w-full rounded-md border border-surface-line bg-surface px-2 py-1.5 text-sm"
+          >
+            <option value="">— position —</option>
+            {options?.positions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block text-xs uppercase tracking-wide text-charcoal/50">
+            Location *
+          </span>
+          <select
+            required
+            value={locationId}
+            onChange={(e) => setLocationId(e.target.value)}
+            className="w-full rounded-md border border-surface-line bg-surface px-2 py-1.5 text-sm"
+          >
+            <option value="">— location —</option>
+            {options?.locations.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block text-xs uppercase tracking-wide text-charcoal/50">
+            Kind
+          </span>
+          <select
+            value={personKind}
+            onChange={(e) => setPersonKind(e.target.value as DirectoryPerson['person_kind'])}
+            className="w-full rounded-md border border-surface-line bg-surface px-2 py-1.5 text-sm"
+          >
+            {Object.entries(KIND_LABELS).map(([k, label]) => (
+              <option key={k} value={k}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block text-xs uppercase tracking-wide text-charcoal/50">
+            Reports to (optional)
+          </span>
+          <select
+            value={managerId}
+            onChange={(e) => setManagerId(e.target.value)}
+            className="w-full rounded-md border border-surface-line bg-surface px-2 py-1.5 text-sm"
+          >
+            <option value="">— reporting line —</option>
+            {people
+              .filter((p) => p.status !== 'incoming')
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.full_name}
+                </option>
+              ))}
+          </select>
+        </label>
+        <label className="block text-sm sm:col-span-2">
+          <span className="mb-1 block text-xs uppercase tracking-wide text-charcoal/50">
+            Email (optional)
+          </span>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full rounded-md border border-surface-line px-2 py-1.5 text-sm"
+          />
+        </label>
+      </div>
+      {error && <p className="text-xs text-danger">{error}</p>}
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={saving}
+          className="rounded-md bg-cg-orange px-3 py-1.5 text-sm font-medium text-white hover:bg-cg-orange-hover disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : 'Add incoming hire'}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-md border border-surface-line px-3 py-1.5 text-sm hover:bg-surface-muted"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
   )
 }
 
