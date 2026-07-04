@@ -27,6 +27,7 @@ export type Resource =
   | 'data_sources'
   | 'person' // profile editing, assignments, review-flag clearing
   | 'notes' // leadership/development/relationship capture
+  | 'own_fun_facts' // self-service fun facts on your own profile (20260706090000)
   | 'relationship_notes' // the cheat sheet's relationship half (audited read)
   | 'restricted_notes' // restricted-visibility notes (audited read)
 
@@ -64,6 +65,11 @@ export function can(
         action === 'create' &&
         ['executive', 'regional_leader', 'location_leader'].includes(user.role)
       )
+    case 'own_fun_facts':
+      // Anyone with app access and a linked person record may share a fun
+      // fact about themselves (migration 20260706090000 enforces the shape:
+      // relationship category, hq visibility, voluntary).
+      return action === 'create' && user.personId !== null
     case 'relationship_notes':
     case 'restricted_notes':
       return action === 'view' && user.role === 'executive'

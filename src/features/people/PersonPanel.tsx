@@ -306,6 +306,22 @@ export function PersonPanel({ personId, session, profile, onClose, onChanged }: 
                     ? 'Viewing this panel is recorded in the audit log'
                     : 'You see the fun facts you wrote; HQ sees them all (audited)'}
                 </p>
+                {user?.personId === person.id && can(user, 'create', 'own_fun_facts') && (
+                  <SelfFunFactForm
+                    onSubmit={async (body) => {
+                      await addNote(actor, {
+                        personId: person.id,
+                        personName: person.full_name,
+                        category: 'relationship',
+                        visibility: 'hq',
+                        body,
+                        voluntarilyShared: true,
+                      })
+                      setSavedNotice('Fun fact saved — thanks for sharing!')
+                      reload()
+                    }}
+                  />
+                )}
                 <NoteList
                   notes={relationshipNotes}
                   empty="Nothing shared yet — fun facts are voluntary."
@@ -412,6 +428,76 @@ function NoteList({ notes, empty }: { notes: Note[]; empty: string }) {
         </li>
       ))}
     </ul>
+  )
+}
+
+// Self-service fun facts (migration 20260706090000): anyone may share a fun
+// fact about THEMSELVES — always relationship/hq/voluntary, no options shown.
+function SelfFunFactForm({ onSubmit }: { onSubmit: (body: string) => Promise<void> }) {
+  const [open, setOpen] = useState(false)
+  const [body, setBody] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="mb-3 flex items-center gap-1.5 rounded-md bg-cg-orange px-3 py-1.5 text-sm font-medium text-white hover:bg-cg-orange-hover"
+      >
+        <Plus className="h-4 w-4" /> Share a fun fact about yourself
+      </button>
+    )
+  }
+
+  return (
+    <form
+      onSubmit={async (e) => {
+        e.preventDefault()
+        setSaving(true)
+        setError(null)
+        try {
+          await onSubmit(body)
+          setBody('')
+          setOpen(false)
+        } catch (err) {
+          setError(err instanceof Error ? err.message : String(err))
+        } finally {
+          setSaving(false)
+        }
+      }}
+      className="mb-3 space-y-2 rounded-md border border-surface-line bg-surface p-3"
+    >
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        required
+        rows={2}
+        placeholder="Family, interests, milestones — whatever you're happy for leadership to know…"
+        className="w-full rounded-md border border-surface-line bg-surface px-3 py-2 text-sm focus:border-charcoal focus:outline-none"
+      />
+      <p className="text-[11px] text-charcoal/50">
+        Visible to HQ/executives (and to you). Sharing is voluntary — you can
+        ask for your fun facts to be removed at any time.
+      </p>
+      {error && <p className="text-xs text-danger">{error}</p>}
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={saving}
+          className="rounded-md bg-cg-orange px-3 py-1.5 text-sm font-medium text-white hover:bg-cg-orange-hover disabled:opacity-50"
+        >
+          {saving ? 'Saving…' : 'Share it'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="rounded-md border border-surface-line px-3 py-1.5 text-sm hover:bg-surface-muted"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
   )
 }
 

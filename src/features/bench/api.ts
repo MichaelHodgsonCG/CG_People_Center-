@@ -111,47 +111,112 @@ export async function deleteSlot(actor: Actor, slotId: string, label: string): P
   await recordAudit(actor, 'delete', 'succession_slot', slotId, label, 'Deleted succession slot')
 }
 
-// --- Bench signals (computed live; degrade gracefully pre-Phase 3) --------
-
-export interface LocationCoverage {
-  locationId: string
-  locationName: string
-  hasGm: boolean
-  hasChefDeCuisine: boolean
-  leaders: number
+/** Set (or clear) a seat's incumbent — how upcoming locations record their
+ * already-hired GM/Chef before Push assigns them there: the coverage grid
+ * shows the incumbent as "(incoming)" until a real assignment exists. */
+export async function setSlotIncumbent(
+  actor: Actor,
+  slotId: string,
+  personId: string | null,
+  label: string,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('people_center_succession_slots')
+    .update({
+      incumbent_person_id: personId,
+      updated_by: actor.personId,
+      updated_by_name: actor.name,
+    })
+    .eq('id', slotId)
+    .select('id')
+  if (error) throw error
+  if (!data || data.length === 0) {
+    throw new Error('The database did not accept this change (permissions).')
+  }
+  await recordAudit(
+    actor,
+    'update',
+    'succession_slot',
+    slotId,
+    label,
+    personId ? 'Set seat incumbent' : 'Cleared seat incumbent',
+  )
 }
 
-export async function fetchLocationCoverage(): Promise<LocationCoverage[]> {
-  const [locs, assignments] = await Promise.all([
+// --- Bench signals (computed live; degrade gracefully pre-Phase 3) --------
+
+export interface PositionColumn {
+  id: string
+  name: string
+  department: string
+  isKey: boolean
+}
+
+export interface CoverageGrid {
+  locations: { id: string; name: string }[]
+  /** People Center–eligible positions, i.e. the full FT management pipeline */
+  positions: PositionColumn[]
+  /** `${locationId}|${positionName}` → names of current holders */
+  occupants: Record<string, string[]>
+  /** locationId → open leadership assignments (any position) */
+  leaders: Record<string, number>
+}
+
+export async function fetchCoverageGrid(): Promise<CoverageGrid> {
+  const [locs, poss, assignments] = await Promise.all([
     supabase.from('people_center_locations').select('id, name').order('name'),
     supabase
+      .from('people_center_positions')
+      .select(
+        'id, name, is_key_position, people_center_eligible, departments:people_center_departments ( name )',
+      )
+      .eq('people_center_eligible', true)
+      .order('name'),
+    supabase
       .from('people_center_position_assignments')
-      .select('location_id, positions:people_center_positions ( name )')
+      .select(
+        `location_id,
+         positions:people_center_positions ( name ),
+         people:people_center_people ( full_name, status )`,
+      )
       .is('ended_on', null),
   ])
   if (locs.error) throw locs.error
+  if (poss.error) throw poss.error
   if (assignments.error) throw assignments.error
-  const byLoc = new Map<string, { gm: boolean; hc: boolean; n: number }>()
+
+  const occupants: Record<string, string[]> = {}
+  const leaders: Record<string, number> = {}
   for (const a of (assignments.data ?? []) as unknown as {
     location_id: string
     positions: { name: string } | null
+    people: { full_name: string; status: string } | null
   }[]) {
-    const rec = byLoc.get(a.location_id) ?? { gm: false, hc: false, n: 0 }
-    rec.n += 1
-    if (a.positions?.name === 'General Manager') rec.gm = true
-    if (a.positions?.name === 'Chef de Cuisine' || a.positions?.name === 'Head Chef') rec.hc = true
-    byLoc.set(a.location_id, rec)
+    if (!a.location_id || !a.people || a.people.status === 'departed') continue
+    leaders[a.location_id] = (leaders[a.location_id] ?? 0) + 1
+    if (!a.positions?.name) continue
+    const key = `${a.location_id}|${a.positions.name}`
+    const names = occupants[key] ?? []
+    if (!names.includes(a.people.full_name)) names.push(a.people.full_name)
+    occupants[key] = names
   }
-  return ((locs.data ?? []) as { id: string; name: string }[]).map((l) => {
-    const rec = byLoc.get(l.id) ?? { gm: false, hc: false, n: 0 }
-    return {
-      locationId: l.id,
-      locationName: l.name,
-      hasGm: rec.gm,
-      hasChefDeCuisine: rec.hc,
-      leaders: rec.n,
-    }
-  })
+
+  return {
+    locations: (locs.data ?? []) as { id: string; name: string }[],
+    positions: ((poss.data ?? []) as unknown as {
+      id: string
+      name: string
+      is_key_position: boolean
+      departments: { name: string } | null
+    }[]).map((p) => ({
+      id: p.id,
+      name: p.name,
+      department: p.departments?.name ?? 'Management',
+      isKey: p.is_key_position,
+    })),
+    occupants,
+    leaders,
+  }
 }
 
 export interface ConversationStaleness {

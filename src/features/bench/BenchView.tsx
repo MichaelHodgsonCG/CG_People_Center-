@@ -15,15 +15,17 @@ import {
   createSlot,
   deleteSlot,
   fetchConversationStaleness,
-  fetchLocationCoverage,
+  fetchCoverageGrid,
   fetchPeopleOptions,
   fetchPeopleStats,
   fetchSlots,
   removeCandidate,
+  setSlotIncumbent,
   type ConversationStaleness,
-  type LocationCoverage,
+  type CoverageGrid,
   type PeopleStats,
   type PersonOption,
+  type PositionColumn,
   type SuccessionSlot,
 } from './api'
 
@@ -46,7 +48,7 @@ interface BenchViewProps {
 export function BenchView({ session, profile }: BenchViewProps) {
   const actor = actorFrom(profile, session)
   const [slots, setSlots] = useState<SuccessionSlot[]>([])
-  const [locations, setLocations] = useState<LocationCoverage[]>([])
+  const [grid, setGrid] = useState<CoverageGrid | null>(null)
   const [staleness, setStaleness] = useState<ConversationStaleness | null>(null)
   const [stats, setStats] = useState<PeopleStats | null>(null)
   const [people, setPeople] = useState<PersonOption[]>([])
@@ -57,15 +59,15 @@ export function BenchView({ session, profile }: BenchViewProps) {
   const load = useCallback(() => {
     Promise.all([
       fetchSlots(),
-      fetchLocationCoverage(),
+      fetchCoverageGrid(),
       fetchConversationStaleness(),
       fetchPeopleStats(),
       fetchPeopleOptions(),
       fetchReferenceOptions(),
     ])
-      .then(([s, lc, cs, ps, po, refs]) => {
+      .then(([s, cg, cs, ps, po, refs]) => {
         setSlots(s)
-        setLocations(lc)
+        setGrid(cg)
         setStaleness(cs)
         setStats(ps)
         setPeople(po)
@@ -79,31 +81,84 @@ export function BenchView({ session, profile }: BenchViewProps) {
     load()
   }, [load])
 
-  const riskLocations = useMemo(
-    () => locations.filter((l) => !l.hasGm || !l.hasChefDeCuisine),
-    [locations],
-  )
+  // Seat incumbents by location × position: an upcoming location's
+  // already-hired GM/Chef shows as "(incoming)" until Push assigns them.
+  const incomingByCell = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const s of slots) {
+      if (s.location_id && s.positions?.name && s.incumbent?.full_name) {
+        map.set(`${s.location_id}|${s.positions.name}`, s.incumbent.full_name)
+      }
+    }
+    return map
+  }, [slots])
 
-  // Successors lined up per location, across all of its seats (GM seat
-  // first, then by rank), deduplicated for display beside the location.
+  const riskLocations = useMemo(() => {
+    if (!grid) return []
+    const key = (locId: string, pos: string) => `${locId}|${pos}`
+    return grid.locations.filter((l) => {
+      const covered = (pos: string) =>
+        (grid.occupants[key(l.id, pos)]?.length ?? 0) > 0 ||
+        incomingByCell.has(key(l.id, pos))
+      return !covered('General Manager') || !covered('Chef de Cuisine')
+    })
+  }, [grid, incomingByCell])
+
+  // Successors lined up per location, split by department so each pipeline
+  // table shows its own bench (GM seats first, then by rank), deduplicated.
   const successorsByLocation = useMemo(() => {
-    const map = new Map<string, string[]>()
+    const positionDept = new Map<string, string>(
+      (grid?.positions ?? []).map((p) => [p.name, p.department]),
+    )
+    const map = new Map<string, string[]>() // `${locationId}|${dept-group}`
     const ordered = [...slots].sort((a, b) =>
       (a.positions?.name === 'General Manager' ? 0 : 1) -
       (b.positions?.name === 'General Manager' ? 0 : 1),
     )
     for (const slot of ordered) {
-      if (!slot.location_id) continue
-      const names = map.get(slot.location_id) ?? []
+      if (!slot.location_id || !slot.positions?.name) continue
+      const dept = positionDept.get(slot.positions.name) ?? 'Management'
+      const group = dept === 'Kitchen' ? 'boh' : 'foh'
+      const key = `${slot.location_id}|${group}`
+      const names = map.get(key) ?? []
       for (const c of slot.candidates) {
         const n = c.people?.full_name
         if (n && !names.includes(n)) names.push(n)
       }
-      map.set(slot.location_id, names)
+      map.set(key, names)
     }
     return map
-  }, [slots])
+  }, [slots, grid])
   const thinSlots = useMemo(() => slots.filter((s) => s.candidates.length < 2), [slots])
+
+  // Column order: key seats first, then the rest of the pipeline.
+  const { fohPositions, bohPositions } = useMemo(() => {
+    const order = [
+      'General Manager',
+      'Assistant General Manager',
+      'General Manager in Training',
+      'Service Manager',
+      'Beverage Manager',
+      'Guest Service Manager',
+      'Events Manager',
+      'Supervisor',
+      'Chef de Cuisine',
+      'Head Chef',
+      'Sous Chef',
+      'Chef de Partie',
+    ]
+    const rank = (n: string) => {
+      const i = order.indexOf(n)
+      return i === -1 ? order.length : i
+    }
+    const eligible = [...(grid?.positions ?? [])].sort(
+      (a, b) => rank(a.name) - rank(b.name) || a.name.localeCompare(b.name),
+    )
+    return {
+      fohPositions: eligible.filter((p) => p.department !== 'Kitchen'),
+      bohPositions: eligible.filter((p) => p.department === 'Kitchen'),
+    }
+  }, [grid])
 
   if (loading) return <p className="p-6 text-sm text-charcoal/50">Loading bench…</p>
   if (error) return <p className="p-6 text-sm text-danger">Could not load bench: {error}</p>
@@ -164,6 +219,10 @@ export function BenchView({ session, profile }: BenchViewProps) {
                 key={s.id}
                 slot={s}
                 people={people}
+                onSetIncumbent={async (personId) => {
+                  await setSlotIncumbent(actor, s.id, personId, slotLabel(s))
+                  load()
+                }}
                 onAddCandidate={async (personId, rank) => {
                   await addCandidate(actor, s.id, personId, rank, slotLabel(s))
                   load()
@@ -184,39 +243,108 @@ export function BenchView({ session, profile }: BenchViewProps) {
         )}
       </section>
 
-      {/* Location coverage */}
-      <section className="rounded-xl border border-surface-line bg-surface p-4">
-        <h2 className="mb-3 text-sm font-semibold">Location leadership coverage</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-surface-line text-xs uppercase tracking-wide text-charcoal/50">
-                <th className="px-3 py-2 font-medium">Location</th>
-                <th className="px-3 py-2 font-medium">GM</th>
-                <th className="px-3 py-2 font-medium">Chef de Cuisine</th>
-                <th className="px-3 py-2 font-medium">Leaders</th>
-                <th className="px-3 py-2 font-medium">Successors lined up</th>
-              </tr>
-            </thead>
-            <tbody>
-              {locations.map((l) => (
-                <tr key={l.locationId} className="border-b border-surface-line/60 last:border-0">
-                  <td className="px-3 py-2 font-medium">{l.locationName}</td>
-                  <td className="px-3 py-2">{l.hasGm ? '✓' : <Missing />}</td>
-                  <td className="px-3 py-2">{l.hasChefDeCuisine ? '✓' : <Missing />}</td>
-                  <td className="px-3 py-2">{l.leaders}</td>
-                  <td className="px-3 py-2 text-charcoal/70">
-                    {(successorsByLocation.get(l.locationId) ?? []).join(', ') || (
-                      <span className="text-charcoal/35">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      {/* Pipeline grids — every restaurant × every FT management position,
+          names in the cells; a seat incumbent covers a vacant cell as
+          "(incoming)" until the real assignment lands. */}
+      {grid && (
+        <>
+          <PipelineTable
+            title="FOH pipeline"
+            group="foh"
+            positions={fohPositions}
+            grid={grid}
+            incomingByCell={incomingByCell}
+            successorsByLocation={successorsByLocation}
+          />
+          <PipelineTable
+            title="BOH (kitchen) pipeline"
+            group="boh"
+            positions={bohPositions}
+            grid={grid}
+            incomingByCell={incomingByCell}
+            successorsByLocation={successorsByLocation}
+          />
+        </>
+      )}
     </div>
+  )
+}
+
+function PipelineTable({
+  title,
+  group,
+  positions,
+  grid,
+  incomingByCell,
+  successorsByLocation,
+}: {
+  title: string
+  group: 'foh' | 'boh'
+  positions: PositionColumn[]
+  grid: CoverageGrid
+  incomingByCell: Map<string, string>
+  successorsByLocation: Map<string, string[]>
+}) {
+  if (positions.length === 0) return null
+  return (
+    <section className="rounded-xl border border-surface-line bg-surface p-4">
+      <h2 className="mb-1 text-sm font-semibold">{title}</h2>
+      <p className="mb-3 text-xs text-charcoal/50">
+        Who holds each seat today. <i>(incoming)</i> = the seat's named
+        incumbent before their assignment starts — set it on the succession
+        seat. Successors come from ranked seat candidates.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr className="border-b border-surface-line text-xs uppercase tracking-wide text-charcoal/50">
+              <th className="px-3 py-2 font-medium">Location</th>
+              {positions.map((p) => (
+                <th key={p.id} className="px-3 py-2 font-medium">
+                  {p.name}
+                </th>
+              ))}
+              <th className="px-3 py-2 font-medium">Successors lined up</th>
+            </tr>
+          </thead>
+          <tbody>
+            {grid.locations.map((l) => (
+              <tr key={l.id} className="border-b border-surface-line/60 last:border-0 align-top">
+                <td className="whitespace-nowrap px-3 py-2 font-medium">{l.name}</td>
+                {positions.map((p) => {
+                  const key = `${l.id}|${p.name}`
+                  const names = grid.occupants[key] ?? []
+                  const incoming = incomingByCell.get(key)
+                  return (
+                    <td key={p.id} className="px-3 py-2 text-charcoal/80">
+                      {names.length > 0 ? (
+                        <>
+                          {names.join(', ')}
+                          {incoming && !names.includes(incoming) && (
+                            <span className="text-info"> · {incoming} (incoming)</span>
+                          )}
+                        </>
+                      ) : incoming ? (
+                        <span className="text-info">{incoming} (incoming)</span>
+                      ) : p.isKey ? (
+                        <Missing />
+                      ) : (
+                        <span className="text-charcoal/30">—</span>
+                      )}
+                    </td>
+                  )
+                })}
+                <td className="px-3 py-2 text-charcoal/70">
+                  {(successorsByLocation.get(`${l.id}|${group}`) ?? []).join(', ') || (
+                    <span className="text-charcoal/35">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   )
 }
 
@@ -340,17 +468,20 @@ function NewSlotForm({
 function SlotCard({
   slot,
   people,
+  onSetIncumbent,
   onAddCandidate,
   onRemoveCandidate,
   onDelete,
 }: {
   slot: SuccessionSlot
   people: PersonOption[]
+  onSetIncumbent: (personId: string | null) => Promise<void>
   onAddCandidate: (personId: string, rank: number) => Promise<void>
   onRemoveCandidate: (candidateId: string) => Promise<void>
   onDelete: () => Promise<void>
 }) {
   const [candidateId, setCandidateId] = useState('')
+  const [editingIncumbent, setEditingIncumbent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const cov = coverage(slot)
   const nextRank = (slot.candidates[slot.candidates.length - 1]?.rank ?? 0) + 1
@@ -360,9 +491,37 @@ function SlotCard({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="text-sm font-medium">{slotLabel(slot)}</p>
-          <p className="text-xs text-charcoal/50">
-            Incumbent: {slot.incumbent?.full_name ?? 'vacant'}
-          </p>
+          {editingIncumbent ? (
+            <select
+              autoFocus
+              value={slot.incumbent_person_id ?? ''}
+              onChange={(e) => {
+                setEditingIncumbent(false)
+                onSetIncumbent(e.target.value || null).catch((err: Error) =>
+                  setError(err.message),
+                )
+              }}
+              onBlur={() => setEditingIncumbent(false)}
+              className="mt-0.5 rounded-md border border-surface-line bg-surface px-2 py-1 text-xs"
+            >
+              <option value="">— vacant —</option>
+              {people.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.full_name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="text-xs text-charcoal/50">
+              Incumbent: {slot.incumbent?.full_name ?? 'vacant'}{' '}
+              <button
+                onClick={() => setEditingIncumbent(true)}
+                className="text-cg-orange underline-offset-2 hover:underline"
+              >
+                change
+              </button>
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${cov.cls}`}>{cov.label}</span>

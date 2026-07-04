@@ -60,14 +60,18 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
             them is recorded in the audit log (you always see the ones you
             wrote). Restricted notes are tighter still: author and executives
             only, in the Restricted section at the bottom. Write notes that
-            are observable, specific, and developmental.
+            are observable, specific, and developmental. And anyone can share
+            a <b>fun fact about themselves</b> from their own cheat sheet —
+            voluntary, removable on request.
           </Section>
 
           <Section title="Org Chart">
-            The live reporting structure, from the CEO down. It draws itself
-            from each person's manager — fix a reporting line in someone's
-            panel and the chart updates. People without a reporting line
-            appear in their own list at the bottom so gaps stay visible.
+            The live reporting structure, from the CEO down, in two views:
+            a compact <b>list</b> and a boxes-and-lines <b>chart</b> (the
+            toggle is at the top right). It draws itself from each person's
+            manager — fix a reporting line in someone's panel and the chart
+            updates. People without a reporting line appear in their own list
+            at the bottom so gaps stay visible.
           </Section>
 
           <Section title="Bench & Risk + Succession (executives only)">
@@ -77,7 +81,10 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
             the numbers, <b>succession planning</b>: create a seat per key
             position per location, name the incumbent, and rank successors —
             coverage computes itself (red = none, yellow = one deep, green =
-            two+). Succession is invisible outside the executive level:
+            two+). The <b>FOH and BOH pipeline grids</b> show who holds every
+            management seat at every restaurant; naming a seat's incumbent
+            marks an already-hired leader as <i>(incoming)</i> at an upcoming
+            location. Succession is invisible outside the executive level:
             nobody ever sees their own standing, and nothing about it appears
             on timelines. Full guide: <i>docs/guides/SUCCESSION_PLANNING.md</i>{' '}
             in the project repository.

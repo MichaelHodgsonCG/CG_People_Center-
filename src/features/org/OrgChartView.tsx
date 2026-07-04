@@ -6,10 +6,18 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { AlertTriangle, ChevronDown, ChevronRight, Network } from 'lucide-react'
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  List,
+  Network,
+  Workflow,
+} from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { PersonPanel } from '../people/PersonPanel'
 import type { UserProfile } from '../../types'
+import './orgChart.css'
 
 interface OrgPerson {
   id: string
@@ -93,6 +101,7 @@ export function OrgChartView({ session, profile }: OrgChartViewProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [view, setView] = useState<'list' | 'chart'>('list')
   // Per-node user override (true = collapsed); absent = the depth default.
   const [overrides, setOverrides] = useState<Map<string, boolean>>(new Map())
   const [allExpanded, setAllExpanded] = useState(false)
@@ -148,20 +157,40 @@ export function OrgChartView({ session, profile }: OrgChartViewProps) {
   if (error) return <p className="p-6 text-sm text-danger">Could not load org chart: {error}</p>
 
   return (
-    <div className="mx-auto w-full max-w-4xl p-4 sm:p-6">
-      <div className="mb-4 flex items-center justify-between">
+    <div className={`mx-auto w-full p-4 sm:p-6 ${view === 'chart' ? 'max-w-none' : 'max-w-4xl'}`}>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs uppercase tracking-wide text-charcoal/50">
           {people.length} people · live from reporting lines
         </p>
-        <button
-          onClick={() => {
-            setAllExpanded((v) => !v)
-            setOverrides(new Map())
-          }}
-          className="rounded-md border border-surface-line px-2.5 py-1.5 text-xs hover:bg-surface-muted"
-        >
-          {allExpanded ? 'Collapse teams' : 'Expand all'}
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-md border border-surface-line">
+            <button
+              onClick={() => setView('list')}
+              className={`flex items-center gap-1 rounded-l-md px-2.5 py-1.5 text-xs ${
+                view === 'list' ? 'bg-charcoal text-white' : 'hover:bg-surface-muted'
+              }`}
+            >
+              <List className="h-3.5 w-3.5" /> List
+            </button>
+            <button
+              onClick={() => setView('chart')}
+              className={`flex items-center gap-1 rounded-r-md px-2.5 py-1.5 text-xs ${
+                view === 'chart' ? 'bg-charcoal text-white' : 'hover:bg-surface-muted'
+              }`}
+            >
+              <Workflow className="h-3.5 w-3.5" /> Chart
+            </button>
+          </div>
+          <button
+            onClick={() => {
+              setAllExpanded((v) => !v)
+              setOverrides(new Map())
+            }}
+            className="rounded-md border border-surface-line px-2.5 py-1.5 text-xs hover:bg-surface-muted"
+          >
+            {allExpanded ? 'Collapse teams' : 'Expand all'}
+          </button>
+        </div>
       </div>
 
       {roots.length === 0 ? (
@@ -173,7 +202,7 @@ export function OrgChartView({ session, profile }: OrgChartViewProps) {
             person panel, and the chart draws itself.
           </p>
         </div>
-      ) : (
+      ) : view === 'list' ? (
         <div className="rounded-xl border border-surface-line bg-surface p-4">
           {roots.map((r) => (
             <TreeRow
@@ -184,6 +213,22 @@ export function OrgChartView({ session, profile }: OrgChartViewProps) {
               onToggle={toggle}
               onOpen={setSelectedId}
             />
+          ))}
+        </div>
+      ) : (
+        <div className="oc-tree overflow-x-auto rounded-xl border border-surface-line bg-surface p-6">
+          {roots.map((r) => (
+            <ul key={r.person.id} className="min-w-max">
+              <li>
+                <ChartNode
+                  node={r}
+                  depth={0}
+                  isCollapsed={isCollapsed}
+                  onToggle={toggle}
+                  onOpen={setSelectedId}
+                />
+              </li>
+            </ul>
           ))}
         </div>
       )}
@@ -298,5 +343,74 @@ function TreeRow({
         </div>
       )}
     </div>
+  )
+}
+
+// Flow-chart node: a card, and (expanded) a <ul> generation below it. The
+// connector lines are drawn entirely by orgChart.css.
+function ChartNode({
+  node,
+  depth,
+  isCollapsed,
+  onToggle,
+  onOpen,
+}: {
+  node: TreeNode
+  depth: number
+  isCollapsed: (id: string, depth: number, hasChildren: boolean) => boolean
+  onToggle: (id: string, depth: number) => void
+  onOpen: (id: string) => void
+}) {
+  const p = node.person
+  const primary = primaryOf(p)
+  const hasChildren = node.children.length > 0
+  const collapsedHere = isCollapsed(p.id, depth, hasChildren)
+
+  return (
+    <>
+      <div className="inline-flex flex-col items-center rounded-lg border border-surface-line bg-white px-3 py-2 shadow-sm">
+        <button
+          onClick={() => onOpen(p.id)}
+          className="max-w-44 text-sm font-medium leading-tight hover:text-cg-orange"
+        >
+          {p.full_name}
+          {p.data_quality_status === 'needs_review' && (
+            <AlertTriangle className="ml-1 inline h-3 w-3 text-warning" />
+          )}
+        </button>
+        <span className="max-w-44 text-[11px] leading-tight text-charcoal/50">
+          {primary?.positions?.name ?? '—'}
+          {primary?.locations?.name ? ` · ${primary.locations.name}` : ''}
+        </span>
+        {hasChildren && (
+          <button
+            onClick={() => onToggle(p.id, depth)}
+            className="mt-1 flex items-center gap-1 rounded-full bg-surface-muted px-2 py-0.5 text-[10px] text-charcoal/60 hover:bg-surface-line/60"
+          >
+            {collapsedHere ? (
+              <ChevronRight className="h-3 w-3" />
+            ) : (
+              <ChevronDown className="h-3 w-3" />
+            )}
+            {node.descendants}
+          </button>
+        )}
+      </div>
+      {hasChildren && !collapsedHere && (
+        <ul>
+          {node.children.map((c) => (
+            <li key={c.person.id}>
+              <ChartNode
+                node={c}
+                depth={depth + 1}
+                isCollapsed={isCollapsed}
+                onToggle={onToggle}
+                onOpen={onOpen}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   )
 }
