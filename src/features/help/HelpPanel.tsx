@@ -72,10 +72,12 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
           <Section title="Org Chart">
             The live reporting structure, from the CEO down, in two views:
             a compact <b>list</b> and a boxes-and-lines <b>chart</b> (the
-            toggle is at the top right). It draws itself from each person's
-            manager — fix a reporting line in someone's panel and the chart
-            updates. People without a reporting line appear in their own list
-            at the bottom so gaps stay visible.
+            toggle is at the top right). The crosshair on any team{' '}
+            <b>focuses the chart there</b> — everything above disappears and a
+            breadcrumb trail takes you back up or out to the full chart. It
+            draws itself from each person's manager — fix a reporting line in
+            someone's panel and the chart updates. People without a reporting
+            line appear in their own list at the bottom so gaps stay visible.
           </Section>
 
           <Section title="Bench & Risk + Succession (executives only)">

@@ -10,9 +10,11 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  Crosshair,
   List,
   Network,
   Workflow,
+  X,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { PersonPanel } from '../people/PersonPanel'
@@ -102,6 +104,9 @@ export function OrgChartView({ session, profile }: OrgChartViewProps) {
   const [error, setError] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [view, setView] = useState<'list' | 'chart'>('list')
+  // Focus mode: render the chart from this person down, hiding everything
+  // above — the way to work with one region of a large chart.
+  const [focusId, setFocusId] = useState<string | null>(null)
   // Per-node user override (true = collapsed); absent = the depth default.
   const [overrides, setOverrides] = useState<Map<string, boolean>>(new Map())
   const [allExpanded, setAllExpanded] = useState(false)
@@ -129,6 +134,44 @@ export function OrgChartView({ session, profile }: OrgChartViewProps) {
   }, [load])
 
   const { roots, unassigned } = useMemo(() => buildForest(people), [people])
+
+  const peopleById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people])
+
+  // The focused subtree, if any. Depth defaults become RELATIVE to the focus
+  // person (they render at depth 0), so focusing a region opens its teams.
+  const focusNode = useMemo(() => {
+    if (!focusId) return null
+    const stack = [...roots]
+    while (stack.length > 0) {
+      const n = stack.pop()!
+      if (n.person.id === focusId) return n
+      stack.push(...n.children)
+    }
+    return null // person left the chart — fall back to the full view
+  }, [roots, focusId])
+
+  // Breadcrumb up the reporting line from the focus person (cycle-safe).
+  const focusTrail = useMemo(() => {
+    if (!focusNode) return []
+    const trail: OrgPerson[] = []
+    const seen = new Set<string>([focusNode.person.id])
+    let cur = focusNode.person.manager_person_id
+    while (cur && !seen.has(cur)) {
+      const p = peopleById.get(cur)
+      if (!p) break
+      trail.unshift(p)
+      seen.add(cur)
+      cur = p.manager_person_id
+    }
+    return trail
+  }, [focusNode, peopleById])
+
+  const focus = useCallback((id: string | null) => {
+    setFocusId(id)
+    setOverrides(new Map()) // fresh depth defaults for the new vantage point
+  }, [])
+
+  const displayRoots = focusNode ? [focusNode] : roots
 
   // Default: location teams (depth >= 2) start collapsed unless "expand all";
   // explicit user toggles always win.
@@ -160,7 +203,10 @@ export function OrgChartView({ session, profile }: OrgChartViewProps) {
     <div className={`mx-auto w-full p-4 sm:p-6 ${view === 'chart' ? 'max-w-none' : 'max-w-4xl'}`}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs uppercase tracking-wide text-charcoal/50">
-          {people.length} people · live from reporting lines
+          {focusNode
+            ? `${focusNode.descendants + 1} people under ${focusNode.person.full_name}`
+            : `${people.length} people`}{' '}
+          · live from reporting lines
         </p>
         <div className="flex items-center gap-2">
           <div className="flex rounded-md border border-surface-line">
@@ -193,6 +239,39 @@ export function OrgChartView({ session, profile }: OrgChartViewProps) {
         </div>
       </div>
 
+      {focusNode && (
+        <div className="mb-3 flex flex-wrap items-center gap-1 rounded-md border border-surface-line bg-surface-muted/40 px-3 py-2 text-sm">
+          <button
+            onClick={() => focus(null)}
+            className="font-medium text-cg-orange underline-offset-2 hover:underline"
+          >
+            Full chart
+          </button>
+          {focusTrail.map((p) => (
+            <span key={p.id} className="flex items-center gap-1">
+              <ChevronRight className="h-3.5 w-3.5 text-charcoal/30" />
+              <button
+                onClick={() => focus(p.id)}
+                className="underline-offset-2 hover:text-cg-orange hover:underline"
+              >
+                {p.full_name}
+              </button>
+            </span>
+          ))}
+          <span className="flex items-center gap-1">
+            <ChevronRight className="h-3.5 w-3.5 text-charcoal/30" />
+            <span className="font-medium">{focusNode.person.full_name}</span>
+          </span>
+          <button
+            onClick={() => focus(null)}
+            aria-label="Back to full chart"
+            className="ml-auto rounded p-0.5 text-charcoal/40 hover:text-charcoal"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {roots.length === 0 ? (
         <div className="rounded-xl border border-surface-line bg-surface p-10 text-center">
           <Network className="mx-auto mb-3 h-8 w-8 text-charcoal/30" />
@@ -204,7 +283,7 @@ export function OrgChartView({ session, profile }: OrgChartViewProps) {
         </div>
       ) : view === 'list' ? (
         <div className="rounded-xl border border-surface-line bg-surface p-4">
-          {roots.map((r) => (
+          {displayRoots.map((r) => (
             <TreeRow
               key={r.person.id}
               node={r}
@@ -212,12 +291,13 @@ export function OrgChartView({ session, profile }: OrgChartViewProps) {
               isCollapsed={isCollapsed}
               onToggle={toggle}
               onOpen={setSelectedId}
+              onFocus={focus}
             />
           ))}
         </div>
       ) : (
         <div className="oc-tree overflow-x-auto rounded-xl border border-surface-line bg-surface p-6">
-          {roots.map((r) => (
+          {displayRoots.map((r) => (
             <ul key={r.person.id} className="min-w-max">
               <li>
                 <ChartNode
@@ -226,6 +306,7 @@ export function OrgChartView({ session, profile }: OrgChartViewProps) {
                   isCollapsed={isCollapsed}
                   onToggle={toggle}
                   onOpen={setSelectedId}
+                  onFocus={focus}
                 />
               </li>
             </ul>
@@ -233,7 +314,7 @@ export function OrgChartView({ session, profile }: OrgChartViewProps) {
         </div>
       )}
 
-      {unassigned.length > 0 && (
+      {!focusNode && unassigned.length > 0 && (
         <div className="mt-4 rounded-xl border border-warning/40 bg-warning/5 p-4">
           <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-warning">
             <AlertTriangle className="h-3.5 w-3.5" /> No reporting line ({unassigned.length})
@@ -276,12 +357,14 @@ function TreeRow({
   isCollapsed,
   onToggle,
   onOpen,
+  onFocus,
 }: {
   node: TreeNode
   depth: number
   isCollapsed: (id: string, depth: number, hasChildren: boolean) => boolean
   onToggle: (id: string, depth: number) => void
   onOpen: (id: string) => void
+  onFocus: (id: string) => void
 }) {
   const p = node.person
   const primary = primaryOf(p)
@@ -332,6 +415,16 @@ function TreeRow({
             </span>
           )}
         </button>
+        {hasChildren && (
+          <button
+            onClick={() => onFocus(p.id)}
+            title="Focus here — show only this team, hide everything above"
+            aria-label={`Focus on ${p.full_name}'s team`}
+            className="rounded p-0.5 text-charcoal/25 hover:text-cg-orange"
+          >
+            <Crosshair className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
       {hasChildren && !collapsedHere && (
         <div>
@@ -343,6 +436,7 @@ function TreeRow({
               isCollapsed={isCollapsed}
               onToggle={onToggle}
               onOpen={onOpen}
+              onFocus={onFocus}
             />
           ))}
         </div>
@@ -359,12 +453,14 @@ function ChartNode({
   isCollapsed,
   onToggle,
   onOpen,
+  onFocus,
 }: {
   node: TreeNode
   depth: number
   isCollapsed: (id: string, depth: number, hasChildren: boolean) => boolean
   onToggle: (id: string, depth: number) => void
   onOpen: (id: string) => void
+  onFocus: (id: string) => void
 }) {
   const p = node.person
   const primary = primaryOf(p)
@@ -393,17 +489,27 @@ function ChartNode({
           </span>
         )}
         {hasChildren && (
-          <button
-            onClick={() => onToggle(p.id, depth)}
-            className="mt-1 flex items-center gap-1 rounded-full bg-surface-muted px-2 py-0.5 text-[10px] text-charcoal/60 hover:bg-surface-line/60"
-          >
-            {collapsedHere ? (
-              <ChevronRight className="h-3 w-3" />
-            ) : (
-              <ChevronDown className="h-3 w-3" />
-            )}
-            {node.descendants}
-          </button>
+          <span className="mt-1 flex items-center gap-1">
+            <button
+              onClick={() => onToggle(p.id, depth)}
+              className="flex items-center gap-1 rounded-full bg-surface-muted px-2 py-0.5 text-[10px] text-charcoal/60 hover:bg-surface-line/60"
+            >
+              {collapsedHere ? (
+                <ChevronRight className="h-3 w-3" />
+              ) : (
+                <ChevronDown className="h-3 w-3" />
+              )}
+              {node.descendants}
+            </button>
+            <button
+              onClick={() => onFocus(p.id)}
+              title="Focus here — show only this team, hide everything above"
+              aria-label={`Focus on ${p.full_name}'s team`}
+              className="rounded p-0.5 text-charcoal/25 hover:text-cg-orange"
+            >
+              <Crosshair className="h-3 w-3" />
+            </button>
+          </span>
         )}
       </div>
       {hasChildren && !collapsedHere && (
@@ -416,6 +522,7 @@ function ChartNode({
                 isCollapsed={isCollapsed}
                 onToggle={onToggle}
                 onOpen={onOpen}
+                onFocus={onFocus}
               />
             </li>
           ))}
