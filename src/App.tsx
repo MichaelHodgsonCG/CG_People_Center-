@@ -5,6 +5,7 @@ import { AppShell, type View } from './components/AppShell'
 import { SessionTimeoutManager } from './components/SessionTimeoutManager'
 import { UsersView } from './features/admin/UsersView'
 import { DirectoryView } from './features/directory/DirectoryView'
+import { VisitView } from './features/visit/VisitView'
 import { OrgChartView } from './features/org/OrgChartView'
 import { BenchView } from './features/bench/BenchView'
 import { can, toPermissionUser } from './permissions'
@@ -62,6 +63,8 @@ export default function App() {
         </Suspense>
       ) : effectiveView === 'users' ? (
         <UsersView session={session} profile={profile} />
+      ) : effectiveView === 'visit' ? (
+        <VisitView session={session} profile={profile} />
       ) : effectiveView === 'org_chart' ? (
         <OrgChartView session={session} profile={profile} />
       ) : effectiveView === 'bench' ? (

@@ -1,5 +1,12 @@
 # Project Log
 
+## [2026-07-15] Mobile "Visit" walk-in + org rules locked
+**Shipped:**   New "Visit" nav view — mobile-first location → managers → notes: pick a restaurant, see its people seniority-ordered, tap to open the cheat sheet and read/add/save notes; last location remembered; big touch targets. Also fixed the Positions-sync error display ([object Object] → real Postgrest message). Both frontend-only; deploy on Vercel to use.
+**Roadmap:**   1a Visit walk-in -> complete (code; deploy pending). Sync error-display fix -> shipped.
+**Decisions:** Restaurant template locked — AGM sits between rank 2/3, reports to GM; FOH Supervisors -> GM by default; kitchen Chef de Cuisine > Senior Sous > Sous > Chef de Partie; Regional Ops Leaders -> John Mackay except Cindy Fawcett -> Jody (CEO); HQ titles created CGOPS-side then synced. Note: user is Chef Mike Hodgson — app session likely maps to a non-admin profile, the probable cause of the Positions-sync rejection.
+**Blockers:**  Supabase paused at user's request — position-sync admin-role diagnosis, 1b (levels + template migration) and 1c (HQ seed) all wait on it.
+**Next:**      When Supabase clears: confirm/fix sync admin-role; draft + apply 1b (position levels + per-concept required-role template) and 1c (HQ team seed from Chart 2).
+
 ## [2026-07-15] Position vocabulary sync (CGOPS -> People Center)
 **Shipped:**   People Center positions now sync from the CGOPS Operational Center master instead of being a hand-seeded copy. New Data Sources → Positions tab: "Sync from CGOPS" button + a grid to toggle show-in-pickers / roster-eligibility / default kind per position. `people_center_sync_positions_from_cgops()` links by external_ref, refreshes CGOPS-owned fields, and materializes new CGOPS positions hidden+ineligible until curated. Pickers filter to curated positions; `Needs Position Review` placeholder hidden. Adding an HQ position = add once in CGOPS, sync, toggle on.
 **Roadmap:**   Position vocabulary sharing -> complete (code shipped; migration 20260715120000 applied + verified on live project)
