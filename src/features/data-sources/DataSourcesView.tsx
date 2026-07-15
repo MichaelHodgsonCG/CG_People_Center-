@@ -1,12 +1,26 @@
-import { useState } from 'react'
-import { AlertTriangle, CheckCircle2, FileSpreadsheet, Upload } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  FileSpreadsheet,
+  Link2,
+  Upload,
+} from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { actorFrom, type Actor } from '../../lib/activity'
 import type { UserProfile } from '../../types'
 import { readXlsx } from './pipeline/transports/xlsxFile'
 import { normalize } from './pipeline/normalize'
 import { classify, summarize } from './pipeline/classify'
 import { loadMappings } from './pipeline/mappingLoader'
 import { commitBatch } from './pipeline/commit'
+import {
+  confirmLink,
+  fetchPendingLinks,
+  rejectLink,
+  type PendingLink,
+} from './pipeline/links'
 import type { ClassifiedRow } from './pipeline/types'
 import { DevPathsPanel } from './DevPathsPanel'
 
@@ -20,9 +34,18 @@ type Stage =
   | { kind: 'done'; batchId: string; summary: ReturnType<typeof summarize> }
   | { kind: 'error'; message: string }
 
-export function DataSourcesView({ profile }: { profile: UserProfile | null }) {
+export function DataSourcesView({
+  profile,
+  session,
+}: {
+  profile: UserProfile | null
+  session: Session | null
+}) {
+  const actor = actorFrom(profile, session)
   const [source, setSource] = useState<'roster' | 'dev_paths'>('roster')
   const [stage, setStage] = useState<Stage>({ kind: 'idle' })
+  // Bumped after a commit so the pending-links panel re-checks for new matches.
+  const [linksToken, setLinksToken] = useState(0)
 
   async function handleFile(file: File) {
     setStage({ kind: 'parsing' })
@@ -59,6 +82,7 @@ export function DataSourcesView({ profile }: { profile: UserProfile | null }) {
         classified,
       )
       setStage({ kind: 'done', batchId: result.batchId, summary: result.summary })
+      setLinksToken((t) => t + 1)
     } catch (e) {
       setStage({ kind: 'error', message: e instanceof Error ? e.message : String(e) })
     }
@@ -99,6 +123,8 @@ export function DataSourcesView({ profile }: { profile: UserProfile | null }) {
         later. Salary and compensation fields are never read. Eligibility is
         decided by position configuration, not salary status.
       </p>
+
+      <PendingLinksPanel actor={actor} token={linksToken} />
 
       {stage.kind === 'idle' && (
         <label className="flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed border-surface-line bg-white p-10 text-center hover:border-charcoal/40">
@@ -145,7 +171,19 @@ export function DataSourcesView({ profile }: { profile: UserProfile | null }) {
             value={stage.summary.importedForReview}
           />
           <SummaryLine label="Already present (unchanged)" value={stage.summary.duplicates} />
+          <SummaryLine
+            label="Possible matches to manual profiles"
+            value={stage.summary.possibleMatch}
+          />
           <SummaryLine label="Out of scope (recorded)" value={stage.summary.skipped} />
+          {stage.summary.possibleMatch > 0 && (
+            <p className="mt-3 flex items-center gap-1.5 rounded-md bg-cg-orange-soft px-3 py-2 text-xs text-charcoal/70">
+              <Link2 className="h-3.5 w-3.5 text-cg-orange" />
+              {stage.summary.possibleMatch} row(s) matched a manually-added
+              profile and were held for linking — scroll up to Pending links to
+              confirm or reject each.
+            </p>
+          )}
           <p className="mt-3 text-xs text-charcoal/50">Batch {stage.batchId}</p>
           <button
             onClick={() => setStage({ kind: 'idle' })}
@@ -251,5 +289,132 @@ function SummaryLine({
       <span>{label}</span>
       <span>{value}</span>
     </p>
+  )
+}
+
+interface PickPerson {
+  id: string
+  full_name: string
+}
+
+// Admin-confirmed linking (ADR 0011): Push rows whose name matched a manually-
+// added profile wait here. Confirm links the Push identity to that profile
+// (preserving its data); Reject imports the row as a brand-new person.
+function PendingLinksPanel({ actor, token }: { actor: Actor; token: number }) {
+  const [links, setLinks] = useState<PendingLink[] | null>(null)
+  const [people, setPeople] = useState<PickPerson[]>([])
+  const [targets, setTargets] = useState<Record<string, string>>({})
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(() => {
+    fetchPendingLinks()
+      .then((rows) => {
+        setLinks(rows)
+        setTargets((prev) => {
+          const next = { ...prev }
+          for (const r of rows) {
+            if (!next[r.importRowId]) next[r.importRowId] = r.suggestedPersonId ?? ''
+          }
+          return next
+        })
+      })
+      .catch((e: Error) => setError(e.message))
+    supabase
+      .from('people_center_people')
+      .select('id, full_name')
+      .neq('status', 'departed')
+      .order('full_name')
+      .then(({ data }) => setPeople((data as PickPerson[]) ?? []))
+  }, [])
+
+  useEffect(() => {
+    load()
+  }, [load, token])
+
+  if (!links || links.length === 0) return null
+
+  async function resolve(row: PendingLink, action: 'confirm' | 'reject') {
+    setBusyId(row.importRowId)
+    setError(null)
+    try {
+      if (action === 'confirm') {
+        const personId = targets[row.importRowId]
+        if (!personId) throw new Error('Pick which profile this is before confirming.')
+        await confirmLink(actor, row.importRowId, personId)
+      } else {
+        await rejectLink(actor, row.importRowId)
+      }
+      load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <div className="mb-6 rounded-xl border border-cg-orange/40 bg-cg-orange-soft/50 p-4">
+      <h3 className="mb-1 flex items-center gap-1.5 text-sm font-medium text-charcoal">
+        <Link2 className="h-4 w-4 text-cg-orange" /> Pending links ({links.length})
+      </h3>
+      <p className="mb-3 text-xs text-charcoal/60">
+        These Push rows match a manually-added profile. Confirm to link the Push
+        identity to that profile (its data is preserved — only the connection is
+        added), or reject to bring the row in as a new person.
+      </p>
+      {error && <p className="mb-2 text-xs text-danger">{error}</p>}
+      <ul className="space-y-3">
+        {links.map((row) => (
+          <li
+            key={row.importRowId}
+            className="rounded-lg border border-surface-line bg-surface p-3"
+          >
+            <div className="mb-2 text-sm">
+              <span className="font-medium">{row.displayName}</span>
+              <span className="text-charcoal/60">
+                {row.primaryPosition ? ` · ${row.primaryPosition}` : ''}
+                {row.companyName ? ` · ${row.companyName}` : ''}
+              </span>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <label className="flex flex-1 items-center gap-2 text-xs text-charcoal/60">
+                Link to
+                <select
+                  value={targets[row.importRowId] ?? ''}
+                  onChange={(e) =>
+                    setTargets((prev) => ({ ...prev, [row.importRowId]: e.target.value }))
+                  }
+                  className="min-w-0 flex-1 rounded-md border border-surface-line bg-surface px-2 py-1.5 text-sm text-charcoal"
+                >
+                  <option value="">— choose profile —</option>
+                  {people.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.full_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex gap-2">
+                <button
+                  disabled={busyId === row.importRowId}
+                  onClick={() => void resolve(row, 'confirm')}
+                  className="rounded-md bg-cg-orange px-3 py-1.5 text-sm font-medium text-white hover:bg-cg-orange-hover disabled:opacity-50"
+                >
+                  {busyId === row.importRowId ? '…' : 'Confirm link'}
+                </button>
+                <button
+                  disabled={busyId === row.importRowId}
+                  onClick={() => void resolve(row, 'reject')}
+                  className="rounded-md border border-surface-line px-3 py-1.5 text-sm hover:bg-surface-muted disabled:opacity-50"
+                >
+                  Not a match
+                </button>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }

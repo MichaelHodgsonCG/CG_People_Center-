@@ -662,6 +662,7 @@ function AdminEditor({
     phone: person.phone,
     status: person.status,
     person_kind: person.person_kind,
+    off_roster: person.off_roster,
     home_city: person.home_city,
     relocation_interest: person.relocation_interest,
     career_goals: person.career_goals,
@@ -806,11 +807,24 @@ function AdminEditor({
             onChange={(e) => set('status', e.target.value as ProfileEdits['status'])}
             className="w-full rounded-md border border-surface-line bg-surface px-2 py-1.5 text-sm"
           >
+            <option value="candidate">Candidate (not hired yet)</option>
             <option value="incoming">Incoming (not started yet)</option>
             <option value="active">Active</option>
             <option value="leave">Leave</option>
             <option value="departed">Departed</option>
           </select>
+        </Field>
+        <Field label="Off-roster (HQ / not in Push)">
+          <label className="flex items-center gap-2 py-1.5 text-sm">
+            <input
+              type="checkbox"
+              checked={edits.off_roster}
+              onChange={(e) => set('off_roster', e.target.checked)}
+            />
+            <span className="text-charcoal/70">
+              Lives outside the Push roster — sync won't flag them
+            </span>
+          </label>
         </Field>
         <Field label="Relocation interest">
           <select

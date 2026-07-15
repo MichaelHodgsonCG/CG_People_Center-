@@ -74,6 +74,25 @@ export async function commitBatch(
   }
   const activatedByRowNumber = new Map<number, string>()
 
+  // Manually-added people not yet linked to this roster source (ADR 0011): the
+  // HQ team (off_roster), candidates, and any hand-entered active/leave record.
+  // When a Push row's name matches one of these, we do NOT import a duplicate —
+  // we record a 'possible_match' for an admin to confirm the link. Sync-created
+  // people already own an import_rows row (they are in existingByKey's values),
+  // so they never enter this pool; incoming hires are name-activated above.
+  const linkedPersonIds = new Set(existingByKey.values())
+  const { data: manualPeople, error: manErr } = await supabase
+    .from('people_center_people')
+    .select('id, full_name, status')
+    .not('status', 'in', '(incoming,departed)')
+  if (manErr) throw manErr
+  const manualByName = new Map<string, string>()
+  for (const p of (manualPeople ?? []) as { id: string; full_name: string }[]) {
+    if (linkedPersonIds.has(p.id)) continue
+    const k = normName(p.full_name)
+    manualByName.set(k, manualByName.has(k) ? 'AMBIGUOUS' : p.id)
+  }
+
   // Clean imports of already-known people are plain duplicates. Flagged
   // imports of already-known people become attach operations instead.
   const rows: ClassifiedRow[] = classified.map((c) => {
@@ -98,6 +117,25 @@ export async function commitBatch(
           ...c,
           disposition: 'duplicate' as const,
           reviewNote: 'Matched an incoming hire — existing record activated',
+        }
+      }
+      // Name matches an unlinked manual profile: hold for admin confirmation
+      // instead of creating a duplicate. Only first appearances become a
+      // possible match (a multi-location second row rides on the first row's
+      // resolution). person_id stays null so re-syncs never treat an
+      // unresolved match as already-linked.
+      if (!c.sameBatchDuplicate) {
+        const manual = manualByName.get(normName(c.row.displayName))
+        if (manual !== undefined) {
+          return {
+            ...c,
+            disposition: 'possible_match' as const,
+            suggestedPersonId: manual === 'AMBIGUOUS' ? null : manual,
+            reviewNote:
+              manual === 'AMBIGUOUS'
+                ? 'Name matches more than one manually-added profile — an admin picks which to link'
+                : 'Name matches a manually-added profile — an admin confirms the link',
+          }
         }
       }
     }
@@ -247,6 +285,7 @@ export async function commitBatch(
       raw: c.row, // already redacted by the normalize whitelist
       disposition: c.disposition,
       review_note: c.reviewNote,
+      suggested_person_id: c.suggestedPersonId ?? null,
       person_id:
         personIdByRowNumber.get(c.row.rowNumber) ??
         (c.disposition === 'duplicate'
@@ -263,6 +302,7 @@ export async function commitBatch(
     duplicates: rows.filter((c) => c.disposition === 'duplicate').length,
     needsReview: rows.filter((c) => c.disposition === 'needs_review').length,
     skipped: rows.filter((c) => c.disposition === 'skipped_out_of_scope').length,
+    possibleMatch: rows.filter((c) => c.disposition === 'possible_match').length,
   }
 
   const { error: countErr } = await supabase
@@ -274,6 +314,7 @@ export async function commitBatch(
       duplicate_count: summary.duplicates,
       review_count: summary.needsReview,
       skipped_count: summary.skipped,
+      possible_match_count: summary.possibleMatch,
     })
     .eq('id', batchId)
   if (countErr) throw countErr

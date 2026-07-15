@@ -33,6 +33,7 @@ export type Disposition =
   | 'skipped_out_of_scope'
   | 'needs_review' // kept for future sources; current rules import-or-skip
   | 'duplicate'
+  | 'possible_match' // name matches an unlinked MANUAL person; awaits admin Confirm/Reject
 
 export interface ClassifiedRow {
   row: NormalizedRow
@@ -52,6 +53,12 @@ export interface ClassifiedRow {
    * assignment to that person instead of creating a second one.
    */
   sameBatchDuplicate: boolean
+  /**
+   * For 'possible_match' rows only: the manually-added person this row most
+   * likely is (null when the name matched more than one, so the admin picks).
+   * The row is NOT imported until the admin confirms or rejects the link.
+   */
+  suggestedPersonId?: string | null
 }
 
 export interface PositionMappingEntry {
@@ -81,6 +88,7 @@ export interface BatchSummary {
   duplicates: number
   needsReview: number
   skipped: number
+  possibleMatch: number
 }
 
 /** Name of the seeded placeholder position for unclear source positions. */

@@ -147,5 +147,9 @@ export function summarize(classified: ClassifiedRow[]) {
     duplicates: classified.filter((c) => c.disposition === 'duplicate').length,
     needsReview: classified.filter((c) => c.disposition === 'needs_review').length,
     skipped: classified.filter((c) => c.disposition === 'skipped_out_of_scope').length,
+    // A possible match against a manually-added person is only known at commit
+    // time (it correlates against the live directory), so the preview count is
+    // always 0 — the real number lands in the post-sync summary.
+    possibleMatch: classified.filter((c) => c.disposition === 'possible_match').length,
   }
 }

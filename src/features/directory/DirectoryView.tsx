@@ -15,7 +15,7 @@ import { actorFrom } from '../../lib/activity'
 import { can, toPermissionUser } from '../../permissions'
 import { PersonPanel } from '../people/PersonPanel'
 import {
-  addIncomingHire,
+  addPerson,
   fetchReferenceOptions,
   type ReferenceOption,
 } from '../people/api'
@@ -25,8 +25,9 @@ interface DirectoryPerson {
   id: string
   full_name: string
   preferred_name: string | null
-  status: 'active' | 'leave' | 'departed' | 'incoming'
+  status: 'active' | 'leave' | 'departed' | 'incoming' | 'candidate'
   person_kind: 'manager' | 'emerging_leader' | 'key_team_member'
+  off_roster: boolean
   hire_date: string | null
   data_quality_status: 'ok' | 'needs_review'
   data_quality_note: string | null
@@ -104,7 +105,7 @@ export function DirectoryView({ session, profile, isAdmin }: DirectoryViewProps)
     supabase
       .from('people_center_people')
       .select(
-        `id, full_name, preferred_name, status, person_kind, hire_date,
+        `id, full_name, preferred_name, status, person_kind, off_roster, hire_date,
          data_quality_status, data_quality_note,
          position_assignments:people_center_position_assignments ( is_primary, ended_on,
            positions:people_center_positions ( name ),
@@ -250,13 +251,13 @@ export function DirectoryView({ session, profile, isAdmin }: DirectoryViewProps)
             onClick={() => setAddingHire((v) => !v)}
             className="flex items-center gap-1.5 rounded-md border border-surface-line px-2.5 py-1.5 text-xs font-medium hover:bg-surface-muted"
           >
-            <UserPlus className="h-3.5 w-3.5" /> Add incoming hire
+            <UserPlus className="h-3.5 w-3.5" /> Add person
           </button>
         )}
       </div>
 
       {addingHire && (
-        <IncomingHireForm
+        <AddPersonForm
           people={people}
           onDone={() => {
             setAddingHire(false)
@@ -325,13 +326,27 @@ export function DirectoryView({ session, profile, isAdmin }: DirectoryViewProps)
                       </span>
                     </td>
                     <td className="px-4 py-2.5">
-                      {p.status === 'incoming' ? (
-                        <span className="rounded-full bg-info/10 px-2 py-0.5 text-xs font-medium text-info">
-                          Incoming{p.hire_date ? ` · starts ${p.hire_date}` : ''}
-                        </span>
-                      ) : (
-                        <span className="capitalize">{p.status}</span>
-                      )}
+                      <span className="flex flex-wrap items-center gap-1">
+                        {p.status === 'incoming' ? (
+                          <span className="rounded-full bg-info/10 px-2 py-0.5 text-xs font-medium text-info">
+                            Incoming{p.hire_date ? ` · starts ${p.hire_date}` : ''}
+                          </span>
+                        ) : p.status === 'candidate' ? (
+                          <span className="rounded-full bg-cg-orange-soft px-2 py-0.5 text-xs font-medium text-cg-orange">
+                            Candidate
+                          </span>
+                        ) : (
+                          <span className="capitalize">{p.status}</span>
+                        )}
+                        {p.off_roster && (
+                          <span
+                            title="HQ / lives outside the Push roster"
+                            className="rounded-full bg-surface-muted px-2 py-0.5 text-[10px] font-medium text-charcoal/60"
+                          >
+                            HQ
+                          </span>
+                        )}
+                      </span>
                     </td>
                   </tr>
                 )
@@ -391,10 +406,31 @@ function SortableHeader({
   )
 }
 
-// Add a signed-but-not-started hire (migration 20260707090000): appears in
-// the roster immediately as "Incoming · starts <date>", becomes active when
-// the Push roster sync matches them (or an admin flips their status).
-function IncomingHireForm({
+// Add a person by hand (ADR 0011). Three kinds:
+//   * incoming — signed hire, not started: future-dated assignment, appears as
+//     "Incoming · starts <date>"; a later Push sync activates them by name.
+//   * hq       — active person outside the Push roster (the HQ team); marked
+//     off_roster so the sync never flags them as missing.
+//   * candidate — a prospect not yet hired; kept out of headcount/org chart.
+// For hq/candidate a later Push sync surfaces a name match as an admin-
+// confirmed "possible link" rather than a duplicate (see Data Sources).
+type AddType = 'incoming' | 'hq' | 'candidate'
+
+const ADD_TYPE_LABELS: Record<AddType, string> = {
+  incoming: 'Incoming hire',
+  hq: 'HQ / active (off roster)',
+  candidate: 'Candidate',
+}
+
+const ADD_TYPE_BLURB: Record<AddType, string> = {
+  incoming:
+    "For people who've signed but aren't in Push yet. They appear as Incoming with their start date; a later Push sync activates this record by name instead of duplicating it.",
+  hq: 'For your HQ team and anyone who works outside the restaurant Push roster. They appear as active and never get flagged as missing by a sync. Give them a reporting line to place them on the org chart.',
+  candidate:
+    'For candidates not yet in any system. They stay out of headcount and the org chart until hired. If they later appear in a Push sync, an admin links the records from Data Sources.',
+}
+
+function AddPersonForm({
   people,
   actor,
   onDone,
@@ -409,6 +445,7 @@ function IncomingHireForm({
     positions: ReferenceOption[]
     locations: ReferenceOption[]
   } | null>(null)
+  const [addType, setAddType] = useState<AddType>('incoming')
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [positionId, setPositionId] = useState('')
@@ -428,6 +465,10 @@ function IncomingHireForm({
     return key.length > 0 && people.some((p) => p.full_name.trim().toLowerCase() === key)
   }, [fullName, people])
 
+  // Incoming needs a start date + a real assignment; HQ/candidate can be added
+  // without a placement yet.
+  const isIncoming = addType === 'incoming'
+
   return (
     <form
       onSubmit={async (e) => {
@@ -435,15 +476,17 @@ function IncomingHireForm({
         setSaving(true)
         setError(null)
         try {
-          await addIncomingHire(actor, {
+          await addPerson(actor, {
             fullName: fullName.trim(),
             email: email.trim() || null,
-            positionId,
-            positionName: options?.positions.find((p) => p.id === positionId)?.name ?? '?',
-            locationId,
-            locationName: options?.locations.find((l) => l.id === locationId)?.name ?? '?',
-            startDate,
+            status: addType === 'candidate' ? 'candidate' : addType === 'hq' ? 'active' : 'incoming',
+            offRoster: addType === 'hq',
             personKind,
+            positionId: positionId || null,
+            positionName: options?.positions.find((p) => p.id === positionId)?.name ?? null,
+            locationId: locationId || null,
+            locationName: options?.locations.find((l) => l.id === locationId)?.name ?? null,
+            startDate: isIncoming ? startDate : null,
             managerPersonId: managerId || null,
           })
           onDone()
@@ -454,12 +497,23 @@ function IncomingHireForm({
       }}
       className="mb-4 space-y-3 rounded-xl border border-surface-line bg-surface p-4"
     >
-      <p className="text-xs text-charcoal/60">
-        For people who've signed but aren't in Push yet. They appear in the
-        roster as <b>Incoming</b> with their start date; when a later Push
-        roster sync finds the same name, this record is activated instead of
-        duplicated.
-      </p>
+      <div className="flex flex-wrap gap-1.5">
+        {(Object.keys(ADD_TYPE_LABELS) as AddType[]).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setAddType(t)}
+            className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+              addType === t
+                ? 'bg-charcoal text-white'
+                : 'border border-surface-line hover:bg-surface-muted'
+            }`}
+          >
+            {ADD_TYPE_LABELS[t]}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-charcoal/60">{ADD_TYPE_BLURB[addType]}</p>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block text-sm">
           <span className="mb-1 block text-xs uppercase tracking-wide text-charcoal/50">
@@ -477,24 +531,26 @@ function IncomingHireForm({
             </span>
           )}
         </label>
+        {isIncoming && (
+          <label className="block text-sm">
+            <span className="mb-1 block text-xs uppercase tracking-wide text-charcoal/50">
+              Start date *
+            </span>
+            <input
+              required
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full rounded-md border border-surface-line px-2 py-1.5 text-sm"
+            />
+          </label>
+        )}
         <label className="block text-sm">
           <span className="mb-1 block text-xs uppercase tracking-wide text-charcoal/50">
-            Start date *
-          </span>
-          <input
-            required
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="w-full rounded-md border border-surface-line px-2 py-1.5 text-sm"
-          />
-        </label>
-        <label className="block text-sm">
-          <span className="mb-1 block text-xs uppercase tracking-wide text-charcoal/50">
-            Position *
+            Position {isIncoming ? '*' : '(optional)'}
           </span>
           <select
-            required
+            required={isIncoming}
             value={positionId}
             onChange={(e) => setPositionId(e.target.value)}
             className="w-full rounded-md border border-surface-line bg-surface px-2 py-1.5 text-sm"
@@ -509,10 +565,10 @@ function IncomingHireForm({
         </label>
         <label className="block text-sm">
           <span className="mb-1 block text-xs uppercase tracking-wide text-charcoal/50">
-            Location *
+            Location {isIncoming ? '*' : '(optional)'}
           </span>
           <select
-            required
+            required={isIncoming}
             value={locationId}
             onChange={(e) => setLocationId(e.target.value)}
             className="w-full rounded-md border border-surface-line bg-surface px-2 py-1.5 text-sm"
@@ -552,7 +608,7 @@ function IncomingHireForm({
           >
             <option value="">— reporting line —</option>
             {people
-              .filter((p) => p.status !== 'incoming')
+              .filter((p) => p.status !== 'incoming' && p.status !== 'candidate')
               .map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.full_name}
@@ -579,7 +635,7 @@ function IncomingHireForm({
           disabled={saving}
           className="rounded-md bg-cg-orange px-3 py-1.5 text-sm font-medium text-white hover:bg-cg-orange-hover disabled:opacity-50"
         >
-          {saving ? 'Saving…' : 'Add incoming hire'}
+          {saving ? 'Saving…' : `Add ${ADD_TYPE_LABELS[addType].toLowerCase()}`}
         </button>
         <button
           type="button"

@@ -58,7 +58,7 @@ export default function App() {
     >
       {effectiveView === 'data_sources' ? (
         <Suspense fallback={<p className="p-6 text-sm text-charcoal/50">Loading…</p>}>
-          <DataSourcesView profile={profile} />
+          <DataSourcesView profile={profile} session={session} />
         </Suspense>
       ) : effectiveView === 'users' ? (
         <UsersView session={session} profile={profile} />

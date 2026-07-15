@@ -24,7 +24,7 @@ import './orgChart.css'
 interface OrgPerson {
   id: string
   full_name: string
-  status: 'active' | 'leave' | 'departed' | 'incoming'
+  status: 'active' | 'leave' | 'departed' | 'incoming' | 'candidate'
   person_kind: 'manager' | 'emerging_leader' | 'key_team_member'
   manager_person_id: string | null
   data_quality_status: 'ok' | 'needs_review'
@@ -120,7 +120,8 @@ export function OrgChartView({ session, profile }: OrgChartViewProps) {
            positions:people_center_positions ( name ),
            locations:people_center_locations ( name ) )`,
       )
-      .neq('status', 'departed')
+      // Candidates are prospects, not org members — keep them out of the tree.
+      .not('status', 'in', '(departed,candidate)')
       .order('full_name')
       .then(({ data, error: err }) => {
         if (err) setError(err.message)

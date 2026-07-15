@@ -25,8 +25,9 @@ export interface PersonDetail {
   preferred_name: string | null
   email: string | null
   phone: string | null
-  status: 'active' | 'leave' | 'departed' | 'incoming'
+  status: 'active' | 'leave' | 'departed' | 'incoming' | 'candidate'
   person_kind: 'manager' | 'emerging_leader' | 'key_team_member'
+  off_roster: boolean
   hire_date: string | null
   manager_person_id: string | null
   mentor_person_id: string | null
@@ -46,7 +47,7 @@ export async function fetchPersonDetail(personId: string): Promise<PersonDetail>
     .from('people_center_people')
     .select(
       `id, full_name, preferred_name, email, phone, status, person_kind,
-       hire_date, manager_person_id, mentor_person_id, home_city,
+       off_roster, hire_date, manager_person_id, mentor_person_id, home_city,
        relocation_interest, career_goals, strengths, risks,
        data_quality_status, data_quality_note, departed_on,
        position_assignments:people_center_position_assignments (
@@ -171,6 +172,7 @@ export interface ProfileEdits {
   phone: string | null
   status: PersonDetail['status']
   person_kind: PersonDetail['person_kind']
+  off_roster: boolean
   home_city: string | null
   relocation_interest: PersonDetail['relocation_interest']
   career_goals: string | null
@@ -230,6 +232,92 @@ export async function clearReviewFlag(
   )
 }
 
+/** A person added by hand (ADR 0011): the HQ team (status 'active',
+ * off_roster), a candidate not yet hired ('candidate'), or a signed-but-not-
+ * started hire ('incoming'). Position/location are optional — an HQ role or a
+ * candidate may have neither yet, and no assignment is created when either is
+ * missing. A later Push sync matches by name: an 'incoming' record is
+ * activated automatically; 'candidate'/off-roster records surface as an
+ * admin-confirmed "possible match" so their manual data is preserved. */
+export interface NewPerson {
+  fullName: string
+  email: string | null
+  status: 'active' | 'incoming' | 'candidate'
+  offRoster: boolean
+  personKind: PersonDetail['person_kind']
+  positionId: string | null
+  positionName: string | null
+  locationId: string | null
+  locationName: string | null
+  startDate: string | null // hire_date + the future-dated assignment start (incoming)
+  managerPersonId: string | null
+  homeCity?: string | null
+}
+
+function describeAdd(p: NewPerson): string {
+  const label =
+    p.status === 'incoming'
+      ? 'Added incoming hire'
+      : p.status === 'candidate'
+        ? 'Added candidate'
+        : p.offRoster
+          ? 'Added HQ / off-roster person'
+          : 'Added person'
+  const where =
+    p.positionName && p.locationName
+      ? ` — ${p.positionName} at ${p.locationName}`
+      : p.positionName
+        ? ` — ${p.positionName}`
+        : ''
+  const starts = p.status === 'incoming' && p.startDate ? `, starts ${p.startDate}` : ''
+  return `${label}${where}${starts}`
+}
+
+export async function addPerson(actor: Actor, p: NewPerson): Promise<string> {
+  const { data, error } = await supabase
+    .from('people_center_people')
+    .insert({
+      full_name: p.fullName,
+      email: p.email,
+      status: p.status,
+      off_roster: p.offRoster,
+      person_kind: p.personKind,
+      // hire_date marks the roster only for a signed hire; a candidate has no
+      // start date, HQ people predate the system.
+      hire_date: p.status === 'incoming' ? p.startDate : null,
+      manager_person_id: p.managerPersonId,
+      home_city: p.homeCity ?? null,
+      updated_by: actor.personId,
+      updated_by_name: actor.name,
+    })
+    .select('id')
+    .single()
+  if (error) {
+    if (error.code === '42501') throw new Error(PERMISSION_HINT)
+    throw error
+  }
+  const personId = data.id as string
+
+  if (p.positionId && p.locationId) {
+    const { error: paErr } = await supabase
+      .from('people_center_position_assignments')
+      .insert({
+        person_id: personId,
+        position_id: p.positionId,
+        location_id: p.locationId,
+        is_primary: true,
+        // an incoming hire's assignment is future-dated to their start; other
+        // manual assignments have no known start (null).
+        started_on: p.status === 'incoming' ? p.startDate : null,
+        updated_by_name: actor.name,
+      })
+    if (paErr) throw paErr
+  }
+
+  await recordAudit(actor, 'create', 'person', personId, p.fullName, describeAdd(p))
+  return personId
+}
+
 export interface IncomingHire {
   fullName: string
   email: string | null
@@ -242,52 +330,22 @@ export interface IncomingHire {
   managerPersonId: string | null
 }
 
-/** Record a signed-but-not-started hire (migration 20260707090000): a real
- * directory row with status 'incoming', hire_date = start date, and a
- * future-dated primary assignment. The Push roster sync later matches them
- * by name and activates the row instead of duplicating it. */
+/** Record a signed-but-not-started hire (migration 20260707090000). Thin
+ * wrapper over addPerson for the common case; kept for call-site clarity. */
 export async function addIncomingHire(actor: Actor, hire: IncomingHire): Promise<string> {
-  const { data, error } = await supabase
-    .from('people_center_people')
-    .insert({
-      full_name: hire.fullName,
-      email: hire.email,
-      status: 'incoming',
-      person_kind: hire.personKind,
-      hire_date: hire.startDate,
-      manager_person_id: hire.managerPersonId,
-      updated_by: actor.personId,
-      updated_by_name: actor.name,
-    })
-    .select('id')
-    .single()
-  if (error) {
-    if (error.code === '42501') throw new Error(PERMISSION_HINT)
-    throw error
-  }
-  const personId = data.id as string
-
-  const { error: paErr } = await supabase
-    .from('people_center_position_assignments')
-    .insert({
-      person_id: personId,
-      position_id: hire.positionId,
-      location_id: hire.locationId,
-      is_primary: true,
-      started_on: hire.startDate,
-      updated_by_name: actor.name,
-    })
-  if (paErr) throw paErr
-
-  await recordAudit(
-    actor,
-    'create',
-    'person',
-    personId,
-    hire.fullName,
-    `Added incoming hire — ${hire.positionName} at ${hire.locationName}, starts ${hire.startDate}`,
-  )
-  return personId
+  return addPerson(actor, {
+    fullName: hire.fullName,
+    email: hire.email,
+    status: 'incoming',
+    offRoster: false,
+    personKind: hire.personKind,
+    positionId: hire.positionId,
+    positionName: hire.positionName,
+    locationId: hire.locationId,
+    locationName: hire.locationName,
+    startDate: hire.startDate,
+    managerPersonId: hire.managerPersonId,
+  })
 }
 
 /** Subject-request purge of relationship notes (retention policy §5).
