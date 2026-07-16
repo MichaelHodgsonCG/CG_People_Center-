@@ -7,7 +7,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { ClipboardList, Download, Settings2 } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronsUpDown,
+  ClipboardList,
+  Download,
+  Settings2,
+} from 'lucide-react'
 import { actorFrom } from '../../lib/activity'
 import {
   fetchCompanyGaps,
@@ -38,6 +45,9 @@ const REASON_CLASS: Record<GapReason, string> = {
   backfill: 'bg-warning/10 text-warning',
   understaffed: 'bg-danger/10 text-danger',
 }
+const REASON_ORDER: Record<GapReason, number> = { 'new-site': 0, backfill: 1, understaffed: 2 }
+
+type CompanySortKey = 'location' | 'role' | 'gap' | 'type'
 
 interface GapViewProps {
   session: Session
@@ -58,6 +68,8 @@ export function GapView({ session, profile }: GapViewProps) {
   const [error, setError] = useState<string | null>(null)
   const [showConfig, setShowConfig] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [sortKey, setSortKey] = useState<CompanySortKey>('type')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   const loadReqs = useCallback(() => {
     fetchRoleRequirements().then(setReqs).catch((e: Error) => setError(e.message))
@@ -115,12 +127,47 @@ export function GapView({ session, profile }: GapViewProps) {
   }, [company])
   const companyTotal = company.reduce((s, g) => s + g.gap, 0)
 
+  const sortedCompany = useMemo(() => {
+    const dir = sortDir === 'asc' ? 1 : -1
+    return [...company].sort((a, b) => {
+      let cmp = 0
+      switch (sortKey) {
+        case 'location':
+          cmp = a.location_name.localeCompare(b.location_name)
+          break
+        case 'role':
+          cmp = (a.level ?? Infinity) - (b.level ?? Infinity) || a.position_name.localeCompare(b.position_name)
+          break
+        case 'gap':
+          cmp = a.gap - b.gap
+          break
+        case 'type':
+          cmp = REASON_ORDER[a.reason] - REASON_ORDER[b.reason]
+          break
+      }
+      // Stable, readable secondary ordering.
+      return (
+        cmp * dir ||
+        a.location_name.localeCompare(b.location_name) ||
+        (a.level ?? Infinity) - (b.level ?? Infinity)
+      )
+    })
+  }, [company, sortKey, sortDir])
+
+  function toggleSort(k: CompanySortKey) {
+    if (sortKey === k) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    else {
+      setSortKey(k)
+      setSortDir(k === 'gap' ? 'desc' : 'asc') // biggest gaps first by default
+    }
+  }
+
   async function exportDocx() {
     setExporting(true)
     setError(null)
     try {
       if (isAll) {
-        await downloadCompanyGapDocx({ rows: company, generatedOn: new Date().toLocaleDateString() })
+        await downloadCompanyGapDocx({ rows: sortedCompany, generatedOn: new Date().toLocaleDateString() })
       } else if (selected && rows.length > 0) {
         await downloadGapDocx({
           locationName: selected.name,
@@ -233,22 +280,22 @@ export function GapView({ session, profile }: GapViewProps) {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-surface-line text-xs uppercase tracking-wide text-charcoal/50">
-                  <th className="px-4 py-3 font-medium">Location</th>
-                  <th className="px-4 py-3 font-medium">Role</th>
-                  <th className="px-4 py-3 text-center font-medium">Gap</th>
-                  <th className="px-4 py-3 font-medium">Type</th>
+                  <SortHeader label="Location" k="location" sortKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                  <SortHeader label="Role" k="role" sortKey={sortKey} dir={sortDir} onSort={toggleSort} />
+                  <SortHeader label="Gap" k="gap" sortKey={sortKey} dir={sortDir} onSort={toggleSort} center />
+                  <SortHeader label="Type" k="type" sortKey={sortKey} dir={sortDir} onSort={toggleSort} />
                   <th className="px-4 py-3 font-medium">Detail</th>
                 </tr>
               </thead>
               <tbody>
-                {company.length === 0 ? (
+                {sortedCompany.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-4 py-6 text-center text-sm text-success">
                       No gaps — every required seat is filled or slated.
                     </td>
                   </tr>
                 ) : (
-                  company.map((g, i) => (
+                  sortedCompany.map((g, i) => (
                     <tr key={i} className="border-b border-surface-line/60 last:border-0">
                       <td className="px-4 py-2.5 font-medium">{g.location_name}</td>
                       <td className="px-4 py-2.5">{g.position_name}</td>
@@ -320,6 +367,45 @@ export function GapView({ session, profile }: GapViewProps) {
         </div>
       )}
     </div>
+  )
+}
+
+function SortHeader({
+  label,
+  k,
+  sortKey,
+  dir,
+  onSort,
+  center,
+}: {
+  label: string
+  k: CompanySortKey
+  sortKey: CompanySortKey
+  dir: 'asc' | 'desc'
+  onSort: (k: CompanySortKey) => void
+  center?: boolean
+}) {
+  const active = sortKey === k
+  return (
+    <th className="px-4 py-3 font-medium">
+      <button
+        onClick={() => onSort(k)}
+        className={`flex items-center gap-1 uppercase tracking-wide hover:text-charcoal ${
+          center ? 'mx-auto' : ''
+        } ${active ? 'text-charcoal' : ''}`}
+      >
+        {label}
+        {active ? (
+          dir === 'asc' ? (
+            <ArrowUp className="h-3 w-3" />
+          ) : (
+            <ArrowDown className="h-3 w-3" />
+          )
+        ) : (
+          <ChevronsUpDown className="h-3 w-3 opacity-40" />
+        )}
+      </button>
+    </th>
   )
 }
 

@@ -1,5 +1,12 @@
 # Project Log
 
+## [2026-07-16] Gap analysis: sortable company-wide table
+**Shipped:**   The company-wide gap table now has sortable column headers — click Location, Role (by seniority/level), Gap (biggest first), or Type (new-site → backfill → understaffed) to re-sort; arrow indicator on the active column. Client-side sort of the already-fetched rows (mirrors the Directory's SortableHeader pattern). The .docx export follows the on-screen sort. Build passes.
+**Roadmap:**   Gap report usability tweak. Company-wide report + backfill remain complete.
+**Decisions:** Role sorts by position level (groups same roles, GM→Sous) not alphabetical; Gap defaults to descending (biggest gaps first); default view stays grouped by Type.
+**Blockers:**  none
+**Next:**      Per-concept required counts; opening-date urgency in the gap view; per-role hiring lead time.
+
 ## [2026-07-16] Gap analysis: company-wide report + backfill from moves
 **Shipped:**   Gap Analysis now defaults to a company-wide report — every missing management role across all locations in one view — classified new-site / backfill / understaffed. Backfill is the new piece Michael asked for: an existing leader slated to a new site vacates their seat, so the origin needs a replacement; the report names the move (e.g. Whitby GM ← Matthew Legault → Peterborough; Burlington Chef ← Matt Carroll + Harry Patel leaving). fetchCompanyGaps() computes projected = current − movers per (location, role); summary chips (New-site 34 / Backfill 3 / Understaffed 35 / Total 72). Single-location mode retained via the picker. .docx export now covers whichever view is showing (added downloadCompanyGapDocx). Consistency fix: both views count PRIMARY assignments so they never disagree (verified Waterloo identical under primary vs all-open). Verified: backfill math (3 backfills — Burlington/Guelph/Whitby), full totals, real-CSS render. Build passes.
 **Roadmap:**   Company-wide gap report + backfill -> done (live). This was the missing piece — the earlier export was per-location and ignored backfill.
