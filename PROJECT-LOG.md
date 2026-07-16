@@ -1,5 +1,12 @@
 # Project Log
 
+## [2026-07-16] Session wrap — all work deployed live; paused
+**Shipped:**   Confirmed Vercel auto-deploys on every `main` push (handover corrected — the old "manual deploy" note was stale). All of this session's work is live at cg-people-center.vercel.app: org-chart seniority ordering, GMs→Regional Ops verified + Caitlin dedup, and the admin reporting-line (manager) editor. Hard refresh clears stale cache (the reason ordering looked unapplied mid-session).
+**Roadmap:**   Items 1 + 2 -> complete (live). Reporting-structure editor -> shipped. Remaining: item 3 (prune non-emerging-leader Supervisors), Phase 2 (future org view + New Restaurant Center dates — its Vercel project is `cg-new-restaurant-center`, same DB), Phase 3 (gap-analysis Word report; needs required-count-per-role).
+**Decisions:** Supervisor pruning, CdP→Sous assignment, and the flat-vs-nested FOH question are leadership calls — Michael will work them in-UI via the new reporting-line editor rather than SQL.
+**Blockers:**  none
+**Next:**      Resume tomorrow. Michael adjusts reporting lines/supervisors in the UI; then pick item 3 (quick win) vs. scoping Phase 2.
+
 ## [2026-07-16] Admin reporting-line editor (set manager in-UI)
 **Shipped:**   Admins can now set a person's reporting line (manager) from the person panel's admin editor — a "Reporting line (manager)" picker listing active org members (labeled Name — Position · Location), writing manager_person_id. The person's own descendants + self are pruned from the list so a reporting loop can't be created. Fail-loud on RLS (same guard as other people writes) + records an audit row and a reporting_line.changed timeline event. Lets leadership rewire the org chart (e.g. Chef de Partie → the right Sous Chef) without SQL; chart redraws live. api.ts: fetchManagerCandidates() + setManager(). Frontend-only — deploy on Vercel to use.
 **Roadmap:**   Reporting-structure admin settings -> shipped (code). Enables self-serve fixes for the CdP→Sous nesting (which Sous is leadership's call — no station data exists to infer it).
