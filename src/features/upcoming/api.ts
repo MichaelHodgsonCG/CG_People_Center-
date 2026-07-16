@@ -57,13 +57,20 @@ export interface TemplatePosition {
   name: string
   level: number | null
   default_reports_to_position_id: string | null
+  default_person_kind: 'manager' | 'emerging_leader' | 'key_team_member'
+  people_center_eligible: boolean
 }
 
-/** The position ranking + reporting template (1b): shapes the planned-org tree. */
+/** The position ranking + reporting template (1b): shapes the planned-org tree.
+ * `default_person_kind` + `people_center_eligible` mark the restaurant
+ * management roster (manager + eligible) so the planned org can show every
+ * management seat, filled or OPEN. */
 export async function fetchPositionTemplate(): Promise<TemplatePosition[]> {
   const { data, error } = await supabase
     .from('people_center_positions')
-    .select('id, name, level, default_reports_to_position_id')
+    .select(
+      'id, name, level, default_reports_to_position_id, default_person_kind, people_center_eligible',
+    )
   if (error) throw error
   return (data as unknown as TemplatePosition[]) ?? []
 }

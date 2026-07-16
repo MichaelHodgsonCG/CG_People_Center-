@@ -57,6 +57,14 @@ export function PlannedOrgPanel({
     for (const s of seats) if (s.position_id) seatByPos.set(s.position_id, s)
 
     const included = new Set<string>()
+    // Seed the full restaurant management roster (manager + people-center
+    // eligible) so every management seat shows, filled or OPEN. Corporate roles
+    // (eligible=false) and line/emerging roles (Supervisor, Chef de Partie) are
+    // excluded. Then pull in any actually-slated position + its ancestors, so a
+    // slot on a non-roster role still appears.
+    for (const p of template) {
+      if (p.default_person_kind === 'manager' && p.people_center_eligible) included.add(p.id)
+    }
     for (const s of seats) {
       let pid: string | null | undefined = s.position_id
       while (pid && !included.has(pid)) {
