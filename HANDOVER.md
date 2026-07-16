@@ -107,9 +107,19 @@ op (employee names intentionally kept out of the repo).
        was empty) and the view now reads `people_center_succession_slots`,
        matched to `opening_sites` by **name** (no id link — cgops_location_id is
        null on the upcoming location rows).
-   - **Slice 3 (next):** layer a future location's planned team onto the org
-     chart. The upcoming locations already exist in `people_center_locations`
-     (status='opening'), so the overlay can key off them directly.
+   - **Slice 3 DONE (live):** per-site **Planned org** modal (Upcoming card →
+     "Planned org", admin/executive). Builds the restaurant hierarchy from the
+     position template (`default_reports_to_position_id`), fills each seat with
+     the slated leader (succession incumbent) or an **OPEN** gap (unslated
+     template ancestors are synthesized, so a slated Chef with no GM shows an
+     OPEN GM above it), and flags **"moving from <site>"** when a slated leader
+     currently holds a seat elsewhere — surfacing the knock-on vacancy (e.g.
+     Peterborough pulls its GM + Chef from Beertown Whitby). Read-only; edits in
+     the Bench. `upcoming/PlannedOrgPanel.tsx` + api `fetchPositionTemplate` /
+     `fetchCurrentPrimaries`.
+   - **Phase 2 remaining:** the per-role hiring-lead-time backlog item; a fuller
+     company-wide ghost overlay on the main org chart (deferred — bigger, needs
+     region/parent inference).
    - **Backlog (Michael's ask):** per-role **hiring lead time** — edit how many
      days before opening each role should be hired (GM 90d, Chef de Cuisine 60d,
      …), so the staffing-deadline countdown becomes role-aware instead of just

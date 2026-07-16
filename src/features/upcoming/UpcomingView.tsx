@@ -10,9 +10,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { CalendarClock, ExternalLink, Store } from 'lucide-react'
+import { CalendarClock, ExternalLink, Network, Store } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { fetchUpcomingSeats, type UpcomingSeat } from './api'
+import { PlannedOrgPanel } from './PlannedOrgPanel'
 import type { UserProfile } from '../../types'
 
 interface OpeningSite {
@@ -77,6 +78,7 @@ export function UpcomingView({ session: _session, profile }: UpcomingViewProps) 
   const [seats, setSeats] = useState<UpcomingSeat[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [plannedSite, setPlannedSite] = useState<OpeningSite | null>(null)
 
   useEffect(() => {
     supabase
@@ -210,9 +212,17 @@ export function UpcomingView({ session: _session, profile }: UpcomingViewProps) 
                 {/* Reflect the succession plan (admin/executive). Edit in Bench. */}
                 {canPlan && (
                   <div className="mt-3 border-t border-surface-line pt-3">
-                    <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-charcoal/45">
-                      Planned leadership · from Bench
-                    </p>
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-medium uppercase tracking-wide text-charcoal/45">
+                        Planned leadership · from Bench
+                      </p>
+                      <button
+                        onClick={() => setPlannedSite(s)}
+                        className="inline-flex items-center gap-1 text-xs font-medium text-cg-orange hover:underline"
+                      >
+                        <Network className="h-3 w-3" /> Planned org
+                      </button>
+                    </div>
                     {siteSeats.length === 0 ? (
                       <p className="text-xs text-charcoal/40">
                         No seats planned yet — set them in Bench &amp; Risk.
@@ -240,6 +250,14 @@ export function UpcomingView({ session: _session, profile }: UpcomingViewProps) 
             )
           })}
         </ul>
+      )}
+
+      {plannedSite && (
+        <PlannedOrgPanel
+          siteName={plannedSite.name}
+          seats={seatsByName.get(norm(plannedSite.name)) ?? []}
+          onClose={() => setPlannedSite(null)}
+        />
       )}
     </div>
   )
