@@ -4,7 +4,7 @@
 // panel stores nothing itself. The relationship half loads through the
 // AUDITED database function — opening it IS the audit event (D8).
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import {
   AlertTriangle,
@@ -37,13 +37,16 @@ import {
   fetchPersonDetail,
   fetchPersonName,
   fetchReferenceOptions,
+  fetchManagerCandidates,
   fetchRelationshipNotes,
   fetchRestrictedNotes,
   reassignPrimary,
+  setManager,
   updatePersonProfile,
   type PersonDetail,
   type ProfileEdits,
   type ReferenceOption,
+  type ManagerCandidate,
 } from './api'
 
 const KIND_LABELS = {
@@ -678,12 +681,40 @@ function AdminEditor({
   )
   const [positionId, setPositionId] = useState(currentPrimary?.position_id ?? '')
   const [locationId, setLocationId] = useState(currentPrimary?.location_id ?? '')
+  const [managers, setManagers] = useState<ManagerCandidate[] | null>(null)
+  const [managerId, setManagerId] = useState(person.manager_person_id ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchReferenceOptions().then(setOptions).catch((e: Error) => setError(e.message))
+    fetchManagerCandidates().then(setManagers).catch((e: Error) => setError(e.message))
   }, [])
+
+  // Candidate managers, minus the person themselves and their descendants —
+  // choosing a report as your manager would make a reporting cycle.
+  const managerOptions = useMemo(() => {
+    if (!managers) return null
+    const childrenOf = new Map<string, string[]>()
+    for (const m of managers) {
+      if (m.manager_person_id) {
+        const arr = childrenOf.get(m.manager_person_id) ?? []
+        arr.push(m.id)
+        childrenOf.set(m.manager_person_id, arr)
+      }
+    }
+    const blocked = new Set<string>([person.id])
+    const stack = [person.id]
+    while (stack.length > 0) {
+      for (const child of childrenOf.get(stack.pop()!) ?? []) {
+        if (!blocked.has(child)) {
+          blocked.add(child)
+          stack.push(child)
+        }
+      }
+    }
+    return managers.filter((m) => !blocked.has(m.id))
+  }, [managers, person.id])
 
   function set<K extends keyof ProfileEdits>(key: K, value: ProfileEdits[K]) {
     setEdits((prev) => ({ ...prev, [key]: value }))
@@ -707,6 +738,15 @@ function AdminEditor({
           locationId,
           options.positions.find((p) => p.id === positionId)?.name ?? '?',
           options.locations.find((l) => l.id === locationId)?.name ?? '?',
+        )
+      }
+      if (managerId !== (person.manager_person_id ?? '')) {
+        await setManager(
+          actor,
+          person.id,
+          person.full_name,
+          managerId || null,
+          managers?.find((m) => m.id === managerId)?.full_name ?? null,
         )
       }
       onSaved()
@@ -900,6 +940,29 @@ function AdminEditor({
         <p className="mt-1.5 text-xs text-charcoal/50">
           Changing this ends the current primary assignment (history kept) and
           starts the new one today.
+        </p>
+      </div>
+
+      <div className="rounded-md border border-surface-line p-3">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-charcoal/50">
+          Reporting line (manager)
+        </p>
+        <select
+          value={managerId}
+          onChange={(e) => setManagerId(e.target.value)}
+          disabled={managerOptions === null}
+          className="w-full rounded-md border border-surface-line bg-surface px-2 py-1.5 text-sm"
+        >
+          <option value="">— None (top of chart) —</option>
+          {managerOptions?.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1.5 text-xs text-charcoal/50">
+          Who this person reports to on the org chart. Their own reports are
+          hidden from the list so a reporting loop can't be created.
         </p>
       </div>
 

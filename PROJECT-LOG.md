@@ -1,5 +1,12 @@
 # Project Log
 
+## [2026-07-16] Admin reporting-line editor (set manager in-UI)
+**Shipped:**   Admins can now set a person's reporting line (manager) from the person panel's admin editor — a "Reporting line (manager)" picker listing active org members (labeled Name — Position · Location), writing manager_person_id. The person's own descendants + self are pruned from the list so a reporting loop can't be created. Fail-loud on RLS (same guard as other people writes) + records an audit row and a reporting_line.changed timeline event. Lets leadership rewire the org chart (e.g. Chef de Partie → the right Sous Chef) without SQL; chart redraws live. api.ts: fetchManagerCandidates() + setManager(). Frontend-only — deploy on Vercel to use.
+**Roadmap:**   Reporting-structure admin settings -> shipped (code). Enables self-serve fixes for the CdP→Sous nesting (which Sous is leadership's call — no station data exists to infer it).
+**Decisions:** Per-person manager picker in the existing AdminEditor (lowest friction, matches position/location reassignment pattern, chart redraws live) over a separate admin page; native select with descendant-pruning for cycle safety over a heavier typeahead (can upgrade later). Reporting-line change gets its own timeline event since it's business-meaningful. Confirmed RLS: people_center_people UPDATE allows admin/executive, no blocking triggers.
+**Blockers:**  none
+**Next:**      Deploy (batches with the undeployed item-1 seniority ordering). Then leadership sets CdP→Sous lines themselves; revisit whether a bulk reassignment tool is worth it for the ~39 Chef de Parties.
+
 ## [2026-07-16] Restaurant GMs joined to Regional Ops (roadmap 2) + Caitlin dedup
 **Shipped:**   Verified the company chart is one connected tree: all 16 restaurant GMs → their Regional Operations Leader → John Mackay → Jody (CEO). The GM→ROL links were already set by the 1c HQ seed, so item 2 was functionally done. Found + fixed the one blemish: a duplicated Regional Operations Leader (HQ-seed off-roster stub with the title but no team vs. the real roster record with the 2 GMs but no title). Consolidated onto the roster record — added the ROL title to it (GMs already attached), ended the stub's assignment and marked the stub departed so it drops off the chart. Live data op (no code change). Final: Tami 4 GMs, Chris 3, Caitlin/Camilla/Danny 2 each (all → John Mackay); Cindy 3 (→ CEO).
 **Roadmap:**   Roadmap item 2 (GMs → Regional Ops Leader, one company-wide chart) -> complete (live). No migration — data-only.

@@ -454,3 +454,88 @@ export async function reassignPrimary(
     location: locationName,
   })
 }
+
+/** A person who can be picked as someone's manager: the reporting-line editor's
+ * options. `manager_person_id` is returned so the caller can prune the subject's
+ * own descendants and prevent a reporting cycle. */
+export interface ManagerCandidate {
+  id: string
+  full_name: string
+  manager_person_id: string | null
+  /** "Name — Position · Location", for disambiguating people with similar names. */
+  label: string
+}
+
+interface RawCandidate {
+  id: string
+  full_name: string
+  manager_person_id: string | null
+  position_assignments: {
+    is_primary: boolean
+    ended_on: string | null
+    positions: { name: string } | null
+    locations: { name: string } | null
+  }[]
+}
+
+function candidateLabel(c: RawCandidate): string {
+  const open = c.position_assignments.filter((a) => !a.ended_on)
+  const primary = open.find((a) => a.is_primary) ?? open[0]
+  const pos = primary?.positions?.name
+  const loc = primary?.locations?.name
+  const suffix = [pos, loc].filter(Boolean).join(' · ')
+  return suffix ? `${c.full_name} — ${suffix}` : c.full_name
+}
+
+/** Everyone eligible to be a manager: active org members (same filter as the
+ * org chart — departed and candidates excluded). */
+export async function fetchManagerCandidates(): Promise<ManagerCandidate[]> {
+  const { data, error } = await supabase
+    .from('people_center_people')
+    .select(
+      `id, full_name, manager_person_id,
+       position_assignments:people_center_position_assignments ( is_primary, ended_on,
+         positions:people_center_positions ( name ),
+         locations:people_center_locations ( name ) )`,
+    )
+    .not('status', 'in', '(departed,candidate)')
+    .order('full_name')
+  if (error) throw error
+  return ((data as unknown as RawCandidate[]) ?? []).map((c) => ({
+    id: c.id,
+    full_name: c.full_name,
+    manager_person_id: c.manager_person_id,
+    label: candidateLabel(c),
+  }))
+}
+
+/** Set (or clear, when managerId is null) a person's reporting line. Fails loud
+ * if RLS filters the UPDATE to zero rows, and records the change on the
+ * timeline — reporting-structure edits are business-meaningful moments. */
+export async function setManager(
+  actor: Actor,
+  personId: string,
+  personName: string,
+  managerId: string | null,
+  managerName: string | null,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('people_center_people')
+    .update({
+      manager_person_id: managerId,
+      updated_by: actor.personId,
+      updated_by_name: actor.name,
+    })
+    .eq('id', personId)
+    .select('id')
+  if (error) throw error
+  if (!data || data.length === 0) throw new Error(PERMISSION_HINT)
+  const summary = managerId
+    ? `Reporting line set to ${managerName ?? 'another manager'}`
+    : 'Reporting line cleared (top of chart)'
+  await recordAudit(actor, 'update', 'person', personId, personName, summary)
+  await recordEvent(actor, 'reporting_line.changed', personId, 'person', personId, {
+    manager_person_id: managerId,
+    manager_name: managerName,
+  })
+}
