@@ -94,14 +94,22 @@ op (employee names intentionally kept out of the repo).
      soft-opening / opening dates + a staffing-deadline countdown.
    - NRC tables = `opening_sites` (the sites, with `location_id` → CGOPS
      location + dates) and `opening_playbooks` / `opening_tasks` / templates.
-   - Slated-incumbent model already exists: `people_center_succession_slots`
-     (position + location + incumbent) and `people_center_succession_candidates`
-     (ranked people) — the Bench view uses them. Reuse for the next slices.
-   - **Slice 2 (next):** assign slated incumbents to each upcoming site's key
-     roles. **Slice 3:** layer a future location's planned team onto the org
+   - **Slice 2 DONE (live):** admins/executives slate who fills each upcoming
+     site's leadership roles, shown per site card (role — person, or "TBD (gap)").
+     New table `people_center_opening_placements` (opening_site_id + position_id
+     + nullable person_id), migration `20260716120000`, RLS admin/executive
+     (mirrors the succession tables). Did NOT reuse succession_slots — its
+     `location_id` hard-references `people_center_locations`, which the upcoming
+     sites don't have; keying to `opening_site_id` avoids materializing
+     locations early and keeps planning data out of the live Bench.
+   - **Slice 3 (next):** layer a future location's planned team onto the org
      chart. NOTE: upcoming sites are NOT in `people_center_locations` yet
      (`pc_location_id` null) — slice 3 must bring them in (or join by
      `cgops_location_id`).
+   - **Backlog (Michael's ask):** per-role **hiring lead time** — edit how many
+     days before opening each role should be hired (GM 90d, Chef de Cuisine 60d,
+     …), so the staffing-deadline countdown becomes role-aware instead of just
+     keying off the handover date. Also feeds Phase 3 gap urgency.
 5. **Phase 3 — gap analysis + deliverable:** compare current vs required org per
    (selected) location → **in-app report + downloadable Word (.docx)**,
    **management + key roles only**, showing planned moves, gaps, and urgency
