@@ -5,8 +5,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { ClipboardList, Settings2 } from 'lucide-react'
+import { ClipboardList, Download, Settings2 } from 'lucide-react'
 import { actorFrom } from '../../lib/activity'
+import { downloadGapDocx } from './docx'
 import {
   fetchFillForLocation,
   fetchGapLocations,
@@ -37,6 +38,7 @@ export function GapView({ session, profile }: GapViewProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showConfig, setShowConfig] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   const loadReqs = useCallback(() => {
     fetchRoleRequirements().then(setReqs).catch((e: Error) => setError(e.message))
@@ -87,6 +89,31 @@ export function GapView({ session, profile }: GapViewProps) {
     const gap = rows.reduce((s, r) => s + r.gap, 0)
     return { required, filled, gap }
   }, [rows])
+
+  async function exportDocx() {
+    if (!selected || rows.length === 0) return
+    setExporting(true)
+    setError(null)
+    try {
+      await downloadGapDocx({
+        locationName: selected.name,
+        upcoming,
+        rows: rows.map((r) => ({
+          position_name: r.position_name,
+          required_count: r.required_count,
+          current: r.current,
+          gap: r.gap,
+          names: r.names,
+        })),
+        totals,
+        generatedOn: new Date().toLocaleDateString(),
+      })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setExporting(false)
+    }
+  }
 
   if (loading) return <p className="p-6 text-sm text-charcoal/50">Loading gap analysis…</p>
   if (error) return <p className="p-6 text-sm text-danger">Could not load gap analysis: {error}</p>
@@ -156,6 +183,13 @@ export function GapView({ session, profile }: GapViewProps) {
             upcoming — showing slated
           </span>
         )}
+        <button
+          onClick={() => void exportDocx()}
+          disabled={exporting || rows.length === 0}
+          className="ml-auto flex items-center gap-1.5 rounded-md border border-surface-line px-2.5 py-1.5 text-xs font-medium hover:bg-surface-muted disabled:opacity-50"
+        >
+          <Download className="h-3.5 w-3.5" /> {exporting ? 'Preparing…' : 'Download .docx'}
+        </button>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-surface-line bg-surface">

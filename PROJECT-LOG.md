@@ -1,5 +1,12 @@
 # Project Log
 
+## [2026-07-16] Phase 3: gap report Word (.docx) export
+**Shipped:**   "Download .docx" button on the Gap Analysis view generates a Word report for the selected location — heading, "Upcoming (slated)"/"Open (in seat)" subtitle, generated-date, summary line, the role table (Role / Required / In-seat|Slated / Gap / People), and a totals row. Added the `docx` library, dynamic-imported inside gaps/docx.ts so it builds a separate lazy chunk (~355 kB, only loads on export — main bundle stays lean). Verified in Node: the exact Document/Table construction packs to a valid .docx (PK zip signature, 8.9 KB). Build passes.
+**Roadmap:**   Phase 3 deliverable (in-app gap report + downloadable Word) -> complete (live). Remaining refinements: per-concept required-count overrides, opening-date urgency in the gap view, per-role hiring lead time.
+**Decisions:** Dynamic-import docx (lazy chunk) rather than bundling it into the main app. Report mirrors the on-screen table exactly (management roster only). Filename "<Location> - Gap Analysis.docx".
+**Blockers:**  none
+**Next:**      Per-concept required counts / date-driven urgency in the gap view, or the per-role hiring-lead-time backlog item.
+
 ## [2026-07-16] Phase 3 v1: gap analysis (required roster vs in-seat/slated)
 **Shipped:**   New "Gap Analysis" nav view (gated by bench permission). Pick a location → required management roster vs. who's in seat (open sites: active/leave people in position assignments) or slated (opening sites: succession incumbents); shows shortfall per role + totals. Required counts in new table people_center_role_requirements (migration 20260716130000 applied live; one base template; admin/executive edit inline via "Required roster" panel). Confirmed base roster (Michael, "1"): GM/Chef de Cuisine/AGM/Service/Beverage/Guest Service = 1, Sous Chef = 2 (Events + GM-in-Training = 0). Scope = management only. gaps/GapView.tsx + gaps/api.ts; AppShell nav + App route + guard. Verified: gap math (Peterborough opening = 6 short of 8, GM+Chef slated; Beertown Waterloo open = fully staffed) and real-CSS render. Build passes.
 **Roadmap:**   Phase 3 v1 (config + in-app gap report) -> done (live). Remaining: Word (.docx) export; per-concept required-count overrides; opening-date urgency in the gap view.
