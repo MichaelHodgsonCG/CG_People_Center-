@@ -1,5 +1,12 @@
 # Project Log
 
+## [2026-07-16] Org-chart siblings ordered by seniority (roadmap 1)
+**Shipped:**   OrgChartView now orders sibling nodes by position `level` (lower = more senior: GM 10 → AGM 25 → Sous 40 …) with full name as tiebreaker, instead of alphabetically. Query pulls `people_center_positions.level`; unranked positions sort last so a missing level never jumps someone above real managers. Applies to both list and chart views (they share `buildForest`). Frontend-only — deploy on Vercel to see it.
+**Roadmap:**   Roadmap item 1 (org-chart seniority ordering) -> complete (code; deploy pending). Build passes (tsc + vite).
+**Decisions:** Sort siblings only (children of each node); roots keep their existing descendant-count order. Unranked/null level -> Infinity (sorts last) rather than 0, so unconfigured positions don't masquerade as most-senior.
+**Blockers:**  none
+**Next:**      Roadmap 2: connect restaurant GMs to their Regional Ops Leader (set manager_person_id) for one company-wide chart.
+
 ## [2026-07-16] Michael admin fix + position ranking (1b) + HQ seed (1c)
 **Shipped:**   (1) Root-caused the Positions-sync rejection: Michael's admin profile was linked to a deleted auth user, so the UI trusted him (role by email) but every DB write failed is_admin() (matches by auth.uid()). Re-pointed to his live auth user — all admin writes work now, no re-login. preferred_name "Michael"; login display untouched. (2) 1b: position levels (GM 10 -> Chef de Partie 50) + default_reports_to accountability lines + Senior Sous Chef. (3) 1c HQ seed: added 22 HQ titles to CGOPS positions (mirrored into People Center), created Head Office location, seeded 31 HQ people (20 new + 11 existing stubs reconciled) all off-roster with reporting lines + titles per the confirmed HQ chart. Verified tree matches.
 **Roadmap:**   1b ranking + 1c HQ seed -> complete (live). Repo migration 20260716090000 (ranking) committed. HQ seed is a live data op (employee names kept out of the repo).

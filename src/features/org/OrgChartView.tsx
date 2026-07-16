@@ -31,7 +31,7 @@ interface OrgPerson {
   position_assignments: {
     is_primary: boolean
     ended_on: string | null
-    positions: { name: string } | null
+    positions: { name: string; level: number | null } | null
     locations: { name: string } | null
   }[]
 }
@@ -59,6 +59,14 @@ function primaryOf(p: OrgPerson) {
   )
 }
 
+// Seniority rank of a person's primary position (lower = more senior, per the
+// position ranking template). People without a ranked position sort last so a
+// missing level never jumps someone above real managers.
+function levelOf(p: OrgPerson) {
+  const lvl = primaryOf(p)?.positions?.level
+  return lvl ?? Number.POSITIVE_INFINITY
+}
+
 function buildForest(people: OrgPerson[]): { roots: TreeNode[]; unassigned: OrgPerson[] } {
   const nodes = new Map<string, TreeNode>(
     people.map((p) => [p.id, { person: p, children: [], descendants: 0 }]),
@@ -77,7 +85,12 @@ function buildForest(people: OrgPerson[]): { roots: TreeNode[]; unassigned: OrgP
     }
   }
   const count = (n: TreeNode): number => {
-    n.children.sort((a, b) => a.person.full_name.localeCompare(b.person.full_name))
+    // Siblings order by seniority (position level), then name as a tiebreaker.
+    n.children.sort(
+      (a, b) =>
+        levelOf(a.person) - levelOf(b.person) ||
+        a.person.full_name.localeCompare(b.person.full_name),
+    )
     n.descendants = n.children.reduce((sum, c) => sum + 1 + count(c), 0)
     return n.descendants
   }
@@ -117,7 +130,7 @@ export function OrgChartView({ session, profile }: OrgChartViewProps) {
       .select(
         `id, full_name, status, person_kind, manager_person_id, data_quality_status,
          position_assignments:people_center_position_assignments ( is_primary, ended_on,
-           positions:people_center_positions ( name ),
+           positions:people_center_positions ( name, level ),
            locations:people_center_locations ( name ) )`,
       )
       // Candidates are prospects, not org members — keep them out of the tree.
