@@ -33,6 +33,18 @@ import { DevPathsPanel } from './DevPathsPanel'
 
 const SOURCE = 'push_roster'
 
+// Supabase/PostgREST errors are plain objects, not Error instances — String()
+// on them prints "[object Object]" and hides the real reason. Read their
+// message/details/hint before falling back.
+function errText(e: unknown): string {
+  if (e instanceof Error) return e.message
+  if (e && typeof e === 'object') {
+    const o = e as { message?: string; details?: string; hint?: string; code?: string }
+    return o.message || o.details || o.hint || JSON.stringify(o)
+  }
+  return String(e)
+}
+
 type Stage =
   | { kind: 'idle' }
   | { kind: 'parsing' }
@@ -69,7 +81,7 @@ export function DataSourcesView({
       const classified = classify(rows, mappings)
       setStage({ kind: 'preview', fileName: file.name, classified })
     } catch (e) {
-      setStage({ kind: 'error', message: e instanceof Error ? e.message : String(e) })
+      setStage({ kind: 'error', message: errText(e) })
     }
   }
 
@@ -91,7 +103,7 @@ export function DataSourcesView({
       setStage({ kind: 'done', batchId: result.batchId, summary: result.summary })
       setLinksToken((t) => t + 1)
     } catch (e) {
-      setStage({ kind: 'error', message: e instanceof Error ? e.message : String(e) })
+      setStage({ kind: 'error', message: errText(e) })
     }
   }
 
@@ -365,7 +377,7 @@ function PendingLinksPanel({ actor, token }: { actor: Actor; token: number }) {
       }
       load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errText(e))
     } finally {
       setBusyId(null)
     }
@@ -471,7 +483,7 @@ function PositionsPanel() {
       setResult(await syncPositionsFromCgops())
       load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errText(e))
     } finally {
       setSyncing(false)
     }
@@ -485,7 +497,7 @@ function PositionsPanel() {
     try {
       await updatePositionConfig(row.id, p)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      setError(errText(e))
       load()
     } finally {
       setSavingId(null)
