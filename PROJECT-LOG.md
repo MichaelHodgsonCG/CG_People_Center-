@@ -1,5 +1,12 @@
 # Project Log
 
+## [2026-07-16] Org chart: rank-staggered sibling vines (chart view)
+**Shipped:**   Chart (flow) view now staggers siblings vertically by rank so seniority reads visually: a Chef de Cuisine (level 20) sits above the Beverage/Service Managers (30) that share its GM, instead of all direct reports sitting on one flat row looking like equals. Siblings group into tiers by position level (most-senior tier = 0); each lower tier drops a fixed 26px and its connector "vine" lengthens to reach it. Same-level siblings stay aligned; reporting data (manager_person_id) is untouched — pure layout. CSS driven by a per-node --oc-drop var; drop computed in ChartNode via siblingDrop(). Verified with a standalone Chromium screenshot of the exact CSS. List view unchanged (already indents).
+**Roadmap:**   Addresses Michael's "managers look equal to the chef" feedback — the visual-rank ask, distinct from reporting-line edits. Live on main.
+**Decisions:** Stagger by distinct-level tier (bounded, same-level rows align) rather than by absolute level delta; 26px step. Chart-view only (scoped to .oc-tree). Kept the shared top rail straight and only lengthened each child's vertical drop — matches the "extend the downward vines" request.
+**Blockers:**  none
+**Next:**      Roadmap 3 (prune non-emerging-leader Supervisors) or Phase 2 scoping. Michael still working supervisor/reporting-line adjustments in-UI.
+
 ## [2026-07-16] Session wrap — all work deployed live; paused
 **Shipped:**   Confirmed Vercel auto-deploys on every `main` push (handover corrected — the old "manual deploy" note was stale). All of this session's work is live at cg-people-center.vercel.app: org-chart seniority ordering, GMs→Regional Ops verified + Caitlin dedup, and the admin reporting-line (manager) editor. Hard refresh clears stale cache (the reason ordering looked unapplied mid-session).
 **Roadmap:**   Items 1 + 2 -> complete (live). Reporting-structure editor -> shipped. Remaining: item 3 (prune non-emerging-leader Supervisors), Phase 2 (future org view + New Restaurant Center dates — its Vercel project is `cg-new-restaurant-center`, same DB), Phase 3 (gap-analysis Word report; needs required-count-per-role).

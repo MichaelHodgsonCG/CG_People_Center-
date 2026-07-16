@@ -30,10 +30,16 @@
   flex-direction: column;
   align-items: center;
   position: relative;
-  padding: 20px 6px 0 6px;
+  /* --oc-drop staggers a sibling downward by its rank so a more-senior sibling
+     (e.g. Chef de Cuisine) sits above a junior one (e.g. Beverage Manager) even
+     though both report to the same manager. The rail stays put; only this
+     child's vine lengthens. Defaults to 0 (no stagger). */
+  padding: calc(20px + var(--oc-drop, 0px)) 6px 0 6px;
 }
 
-/* the horizontal rail above each child, plus the stub down to its box */
+/* the horizontal rail above each child, plus the stub down to its box. The
+   rail sits at top:0 (shared by all siblings); the vertical drop lengthens
+   with --oc-drop so the connector reaches this child's lowered box. */
 .oc-tree li::before,
 .oc-tree li::after {
   content: '';
@@ -42,7 +48,7 @@
   right: 50%;
   border-top: 1px solid var(--oc-line);
   width: 50%;
-  height: 20px;
+  height: calc(20px + var(--oc-drop, 0px));
 }
 .oc-tree li::after {
   right: auto;

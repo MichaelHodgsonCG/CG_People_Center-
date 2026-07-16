@@ -4,7 +4,7 @@
 // People without a reporting line surface in their own bucket so gaps are
 // visible instead of silently missing.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import {
   AlertTriangle,
@@ -65,6 +65,17 @@ function primaryOf(p: OrgPerson) {
 function levelOf(p: OrgPerson) {
   const lvl = primaryOf(p)?.positions?.level
   return lvl ?? Number.POSITIVE_INFINITY
+}
+
+// Chart-view only: how far to drop a sibling below the shared rail so rank reads
+// visually. Siblings group into tiers by position level (most-senior tier = 0);
+// each tier below the top drops by a fixed step, so a Chef de Cuisine sits above
+// the Beverage/Service Managers that share its GM. Same-level siblings share a
+// tier and stay aligned. Reporting data is untouched — this is pure layout.
+const RANK_TIER_DROP_PX = 26
+function siblingDrop(siblings: TreeNode[], child: TreeNode): number {
+  const tiers = [...new Set(siblings.map((s) => levelOf(s.person)))].sort((a, b) => a - b)
+  return tiers.indexOf(levelOf(child.person)) * RANK_TIER_DROP_PX
 }
 
 function buildForest(people: OrgPerson[]): { roots: TreeNode[]; unassigned: OrgPerson[] } {
@@ -529,7 +540,10 @@ function ChartNode({
       {hasChildren && !collapsedHere && (
         <ul>
           {node.children.map((c) => (
-            <li key={c.person.id}>
+            <li
+              key={c.person.id}
+              style={{ '--oc-drop': `${siblingDrop(node.children, c)}px` } as CSSProperties}
+            >
               <ChartNode
                 node={c}
                 depth={depth + 1}
