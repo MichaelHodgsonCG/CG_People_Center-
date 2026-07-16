@@ -9,6 +9,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   BarChart3,
+  ClipboardList,
   Database,
   HelpCircle,
   Lightbulb,
@@ -33,6 +34,7 @@ export type View =
   | 'visit'
   | 'org_chart'
   | 'upcoming'
+  | 'gaps'
   | 'bench'
   | 'data_sources'
   | 'users'
@@ -42,6 +44,7 @@ const NAV: { view: View; label: string; resource: Resource; icon: LucideIcon }[]
   { view: 'visit', label: 'Visit', resource: 'directory', icon: MapPin },
   { view: 'org_chart', label: 'Org Chart', resource: 'org_chart', icon: Network },
   { view: 'upcoming', label: 'Upcoming', resource: 'org_chart', icon: Store },
+  { view: 'gaps', label: 'Gap Analysis', resource: 'bench', icon: ClipboardList },
   { view: 'bench', label: 'Bench & Risk', resource: 'bench', icon: BarChart3 },
   { view: 'data_sources', label: 'Data Sources', resource: 'data_sources', icon: Database },
   { view: 'users', label: 'Users', resource: 'admin_area', icon: UserCog },
@@ -160,7 +163,7 @@ export function AppShell({
       {suggestionsOpen && (
         <SuggestionsPanel
           profile={profile}
-          pageContext={view === 'data_sources' ? 'Data Sources' : view === 'org_chart' ? 'Org Chart' : view === 'upcoming' ? 'Upcoming' : view === 'bench' ? 'Bench & Risk' : view === 'users' ? 'Users' : view === 'visit' ? 'Visit' : 'Directory'}
+          pageContext={view === 'data_sources' ? 'Data Sources' : view === 'org_chart' ? 'Org Chart' : view === 'upcoming' ? 'Upcoming' : view === 'gaps' ? 'Gap Analysis' : view === 'bench' ? 'Bench & Risk' : view === 'users' ? 'Users' : view === 'visit' ? 'Visit' : 'Directory'}
           onClose={() => setSuggestionsOpen(false)}
         />
       )}

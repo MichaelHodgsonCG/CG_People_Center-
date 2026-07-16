@@ -8,6 +8,7 @@ import { DirectoryView } from './features/directory/DirectoryView'
 import { VisitView } from './features/visit/VisitView'
 import { OrgChartView } from './features/org/OrgChartView'
 import { UpcomingView } from './features/upcoming/UpcomingView'
+import { GapView } from './features/gaps/GapView'
 import { BenchView } from './features/bench/BenchView'
 import { can, toPermissionUser } from './permissions'
 
@@ -42,6 +43,7 @@ export default function App() {
   const guarded =
     (view === 'data_sources' && !can(user, 'view', 'data_sources')) ||
     (view === 'bench' && !can(user, 'view', 'bench')) ||
+    (view === 'gaps' && !can(user, 'view', 'bench')) ||
     (view === 'users' && !can(user, 'view', 'admin_area'))
   const effectiveView: View = guarded ? 'directory' : view
 
@@ -70,6 +72,8 @@ export default function App() {
         <OrgChartView session={session} profile={profile} />
       ) : effectiveView === 'upcoming' ? (
         <UpcomingView session={session} profile={profile} />
+      ) : effectiveView === 'gaps' ? (
+        <GapView session={session} profile={profile} />
       ) : effectiveView === 'bench' ? (
         <BenchView session={session} profile={profile} />
       ) : (

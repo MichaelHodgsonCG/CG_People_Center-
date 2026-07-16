@@ -124,11 +124,17 @@ op (employee names intentionally kept out of the repo).
      days before opening each role should be hired (GM 90d, Chef de Cuisine 60d,
      …), so the staffing-deadline countdown becomes role-aware instead of just
      keying off the handover date. Also feeds Phase 3 gap urgency.
-5. **Phase 3 — gap analysis + deliverable:** compare current vs required org per
-   (selected) location → **in-app report + downloadable Word (.docx)**,
-   **management + key roles only**, showing planned moves, gaps, and urgency
-   (from Phase-2 dates). Needs Michael's input: **required count per role** for
-   the ideal restaurant (one base template + per-concept carve-outs).
+5. **Phase 3 — gap analysis** (in progress):
+   - **v1 DONE (live):** new **Gap Analysis** nav view (gated by bench
+     permission). Pick a location → required roster vs. who's in seat (open
+     sites) or slated (opening sites), shortfall per role + totals. Required
+     counts live in `people_center_role_requirements` (migration 20260716130000,
+     one base template, admin/executive-editable inline via "Required roster";
+     seeded GM/Chef/AGM/Service/Beverage/Guest Service = 1, Sous = 2). Scope =
+     management only (Michael's call). `gaps/GapView.tsx` + `gaps/api.ts`.
+   - **Remaining:** downloadable **Word (.docx)** export of the report (needs a
+     docx lib); per-concept required-count overrides (base template only today);
+     wire opening-date **urgency** into the gap view (dates already in Upcoming).
 
 ## Gotchas
 - Two auth identities: UI role by email vs DB `auth.uid()` (see Michael fix).
