@@ -1,11 +1,11 @@
 # Project Log
 
-## [2026-07-16] Fixed Michael's admin access; applied position ranking (1b)
-**Shipped:**   Root-caused the Positions-sync rejection: Michael's admin profile was linked to a deleted auth user, so the UI trusted him (role resolved by email) but every DB write failed is_admin() (matches by auth.uid()). Re-pointed his profile to his live auth user — all admin writes (incl. sync) work now, no re-login. Person record already "Michael Hodgson"; set preferred_name "Michael"; login display untouched. Applied 1b: position levels (GM 10 -> Chef de Partie 50) + default_reports_to accountability lines + added Senior Sous Chef.
-**Roadmap:**   1b ranking/reporting -> complete (DB + repo migration 20260716090000). HQ seed (1c) + HQ positions in CGOPS -> next.
-**Decisions:** Ranking/reporting per Michael's confirmations (AGM 25 reports to GM; Supervisor -> GM; kitchen CdC>Sr Sous>Sous>CdP). Auth-link fix is a data correction, not a migration.
-**Blockers:**  none. Note: Supervisor is people_center_eligible=true in live data (drift from ADR 0004 nomination-only) — left as-is pending Michael's call.
-**Next:**      HQ seed: add ~22 HQ titles to CGOPS positions, create a Head Office location, seed ~30 HQ people (reconcile existing Michael + Megan) with reporting lines — pending Michael's go on the approach.
+## [2026-07-16] Michael admin fix + position ranking (1b) + HQ seed (1c)
+**Shipped:**   (1) Root-caused the Positions-sync rejection: Michael's admin profile was linked to a deleted auth user, so the UI trusted him (role by email) but every DB write failed is_admin() (matches by auth.uid()). Re-pointed to his live auth user — all admin writes work now, no re-login. preferred_name "Michael"; login display untouched. (2) 1b: position levels (GM 10 -> Chef de Partie 50) + default_reports_to accountability lines + Senior Sous Chef. (3) 1c HQ seed: added 22 HQ titles to CGOPS positions (mirrored into People Center), created Head Office location, seeded 31 HQ people (20 new + 11 existing stubs reconciled) all off-roster with reporting lines + titles per the confirmed HQ chart. Verified tree matches.
+**Roadmap:**   1b ranking + 1c HQ seed -> complete (live). Repo migration 20260716090000 (ranking) committed. HQ seed is a live data op (employee names kept out of the repo).
+**Decisions:** HQ modeled as off-roster people at a "Head Office" location so titles render. HQ titles added CGOPS-side then mirrored. Riley/Darryl -> Todd Clarmo (single-manager approx of "report to Todd & Michael"). Cindy Fawcett -> CEO; Issac/Jennifer/Shanna -> CEO (change next fiscal). Chelsey -> Megan.
+**Blockers:**  none. Supervisor left people_center_eligible=true (Michael's call).
+**Next:**      Frontend: order org-chart siblings by position.level (data now exists). Connect restaurant GMs to their Regional Ops Leader. Queued: a way to ignore/remove supervisors who aren't emerging leaders. Then Phase 2 (upcoming-locations future view + New Restaurant Center dates) and Phase 3 (gap-analysis Word report; needs required-counts per role).
 
 ## [2026-07-15] Mobile "Visit" walk-in + org rules locked
 **Shipped:**   New "Visit" nav view — mobile-first location → managers → notes: pick a restaurant, see its people seniority-ordered, tap to open the cheat sheet and read/add/save notes; last location remembered; big touch targets. Also fixed the Positions-sync error display ([object Object] → real Postgrest message). Both frontend-only; deploy on Vercel to use.
