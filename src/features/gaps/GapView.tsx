@@ -14,7 +14,9 @@ import {
   ClipboardList,
   Download,
   Settings2,
+  UploadCloud,
 } from 'lucide-react'
+import { ImportPanel } from './ImportPanel'
 import { actorFrom } from '../../lib/activity'
 import {
   fetchCompanyGaps,
@@ -70,6 +72,7 @@ export function GapView({ session, profile }: GapViewProps) {
   const [exporting, setExporting] = useState(false)
   const [sortKey, setSortKey] = useState<CompanySortKey>('type')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [importing, setImporting] = useState(false)
 
   const loadReqs = useCallback(() => {
     fetchRoleRequirements().then(setReqs).catch((e: Error) => setError(e.message))
@@ -266,7 +269,23 @@ export function GapView({ session, profile }: GapViewProps) {
         >
           <Download className="h-3.5 w-3.5" /> {exporting ? 'Preparing…' : 'Download Excel'}
         </button>
+        {canEdit && (
+          <button
+            onClick={() => setImporting(true)}
+            className="flex items-center gap-1.5 rounded-md border border-surface-line px-2.5 py-1.5 text-xs font-medium hover:bg-surface-muted"
+          >
+            <UploadCloud className="h-3.5 w-3.5" /> Upload Excel
+          </button>
+        )}
       </div>
+
+      {importing && (
+        <ImportPanel
+          actor={actor}
+          onClose={() => setImporting(false)}
+          onApplied={loadReqs}
+        />
+      )}
 
       {isAll ? (
         <>

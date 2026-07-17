@@ -6,6 +6,9 @@
 
 import { supabase } from '../../lib/supabase'
 import { recordAudit, type Actor } from '../../lib/activity'
+import { addPerson } from '../people/api'
+import { createSlot, setSlotIncumbent } from '../bench/api'
+import type { ResolvedAssignment } from './importXlsx'
 
 export interface RoleRequirement {
   position_id: string
@@ -295,4 +298,84 @@ export async function fetchFillForLocation(
     }
   }
   return map
+}
+
+// --- Excel round-trip: apply filled-in assignments as slated leaders ---------
+
+/** Existing succession seats keyed `${locationId}|${positionId}` → slot id, so
+ * an import updates the seat's incumbent instead of colliding with the
+ * one-seat-per-role unique index. */
+export async function fetchSlotIndex(): Promise<Map<string, string>> {
+  const { data, error } = await supabase
+    .from('people_center_succession_slots')
+    .select('id, position_id, location_id')
+  if (error) throw error
+  type Row = { id: string; position_id: string; location_id: string | null }
+  const m = new Map<string, string>()
+  for (const s of (data as unknown as Row[]) ?? []) {
+    if (s.location_id) m.set(`${s.location_id}|${s.position_id}`, s.id)
+  }
+  return m
+}
+
+/** Everyone (except departed) for name matching on import. */
+export async function fetchPeopleForMatch(): Promise<{ id: string; full_name: string }[]> {
+  const { data, error } = await supabase
+    .from('people_center_people')
+    .select('id, full_name')
+    .neq('status', 'departed')
+  if (error) throw error
+  return (data as unknown as { id: string; full_name: string }[]) ?? []
+}
+
+export interface ApplyResult {
+  created: number // new candidate people added
+  linked: number // matched to existing people
+  slotsSet: number // succession seats set/updated
+  errors: string[]
+}
+
+/** Record each resolved assignment as a slated leader: link or create the
+ * person, then set (or create) the succession seat's incumbent for that
+ * location+role. Error rows are skipped by the caller. */
+export async function applyAssignments(
+  actor: Actor,
+  items: ResolvedAssignment[],
+  slotIndex: Map<string, string>,
+): Promise<ApplyResult> {
+  const res: ApplyResult = { created: 0, linked: 0, slotsSet: 0, errors: [] }
+  for (const it of items) {
+    if (it.action === 'error' || !it.locationId || !it.positionId) continue
+    try {
+      let personId = it.personId
+      if (!personId) {
+        personId = await addPerson(actor, {
+          fullName: it.personName,
+          email: null,
+          status: 'candidate',
+          offRoster: false,
+          personKind: 'manager',
+          positionId: null,
+          positionName: null,
+          locationId: null,
+          locationName: null,
+          startDate: null,
+          managerPersonId: null,
+        })
+        res.created++
+      } else {
+        res.linked++
+      }
+      const label = `${it.roleName} — ${it.locationName}`
+      const existing = slotIndex.get(`${it.locationId}|${it.positionId}`)
+      if (existing) await setSlotIncumbent(actor, existing, personId, label)
+      else await createSlot(actor, it.positionId, it.locationId, null, personId, label)
+      res.slotsSet++
+    } catch (e) {
+      res.errors.push(
+        `${it.personName} → ${it.roleName} @ ${it.locationName}: ${e instanceof Error ? e.message : String(e)}`,
+      )
+    }
+  }
+  return res
 }

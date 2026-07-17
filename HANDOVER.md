@@ -146,7 +146,17 @@ op (employee names intentionally kept out of the repo).
      view — single-location or the full company-wide report — via the `xlsx`
      (SheetJS) lib already used by the import pipeline (dynamic-imported).
      `gaps/excel.ts`. (Was `.docx`/`docx` lib — swapped to Excel per Michael;
-     docx dependency removed.)
+     docx dependency removed.) The company export has a blank **"Assign to"**
+     column for the round-trip.
+   - **Excel round-trip import DONE (live):** "Upload Excel" (admin/executive) →
+     fill the "Assign to" column with who should staff each open role, re-upload
+     → preview → Apply. Resolves Location/Role/person by name: an existing
+     person **links**, an unknown name is **added as a candidate**; then the
+     location+role **succession seat's incumbent is set** (createSlot /
+     setSlotIncumbent — one seat per role, so extra comma-separated names are
+     ignored with a note). `gaps/importXlsx.ts` (parse+resolve, pure),
+     `gaps/ImportPanel.tsx` (preview UI), `applyAssignments` in gaps/api.ts.
+     Nothing writes until Apply.
    - **Observed:** with the seeded roster, ~35 understaffed gaps across EXISTING
      sites — many don't match the ideal roster (e.g. no Guest Service/Beverage
      Mgr). Real, not a bug; Michael can trim the required roster or (later) set
